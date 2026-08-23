@@ -11,15 +11,12 @@ import { openExternalUrl, safeMediaUrl } from '../utils/url'
 const app = useAppStore()
 let _unmounted = false
 const nickCache = {}
-const PAGE = 50
+const CHAT_LIMIT = 100
 const isMobile = ref(window.innerWidth < 768)
 const mobileView = ref('list')
 const chatType = ref('group')
-const chatDays = ref(1)
 const chatSearch = ref('')
 const chats = ref([])
-const page = ref(1)
-const total = ref(0)
 const current = ref(null)
 const history = ref([])
 const historyRef = ref(null)
@@ -31,7 +28,7 @@ const sendErr = ref('')
 const recalling = ref('')
 const rawDataMsg = ref(null)
 const quotedMsg = ref(null)
-const oldestDate = ref('')
+const historyCursor = ref('')
 const hasMore = ref(true)
 const loadingOlder = ref(false)
 const mediaFileType = ref('1')
@@ -158,11 +155,13 @@ let _fetchTimer = null
 async function fetchChats() {
   if (_unmounted) return
   try {
-    const res = await axios.post('/api/message/chats', { type: chatType.value, search: chatSearch.value, bot_qq: app.currentBotId || '', page: page.value, page_size: PAGE, days: chatDays.value })
+    const res = await axios.post('/api/message/chats', {
+      type: chatType.value, search: chatSearch.value,
+      bot_qq: app.currentBotId || '', page: 1, page_size: CHAT_LIMIT,
+    })
     if (_unmounted) return
     chats.value = res.data?.data?.chats || []
-    total.value = res.data?.data?.total || chats.value.length
-  } catch { if (!_unmounted) { chats.value = []; total.value = 0 } }
+  } catch { if (!_unmounted) chats.value = [] }
 }
 
 function memberInfo(uid) { return groupRoles.value[uid] || {} }
@@ -256,7 +255,7 @@ let _selectId = 0
 async function selectChat(chat) {
   const myId = ++_selectId
   current.value = chat; msgText.value = ''; sendErr.value = ''; imgFile.value = null; quotedMsg.value = null
-  hasMore.value = true; oldestDate.value = ''; loadingOlder.value = false; groupRoles.value = {}
+  hasMore.value = true; historyCursor.value = ''; loadingOlder.value = false; groupRoles.value = {}
   if (isMobile.value) mobileView.value = 'chat'
   history.value = []
   try {
@@ -267,29 +266,33 @@ async function selectChat(chat) {
     resolveMessageReferences(msgs)
     history.value = msgs
     if (apiChatType.value === 'group') fetchGroupRoles(chat.chat_id)
-    oldestDate.value = res.data?.data?.oldest_date || ''
+    historyCursor.value = String(res.data?.data?.next_cursor || '')
     hasMore.value = res.data?.data?.has_more !== false
     await nextTick(); scrollBottom(); watchImgLoads()
   } catch { if (myId === _selectId) { history.value = []; hasMore.value = false } }
 }
 
 async function loadOlder() {
-  if (loadingOlder.value || !hasMore.value || !current.value || !oldestDate.value) return
+  if (loadingOlder.value || !hasMore.value || !current.value || !historyCursor.value) return
   loadingOlder.value = true
   try {
+    const requestedCursor = historyCursor.value
     const res = await axios.post('/api/message/history', {
       chat_type: apiChatType.value, chat_id: current.value.chat_id,
-      bot_qq: app.currentBotId || current.value.bot_qq || '', before_date: oldestDate.value,
+      bot_qq: app.currentBotId || current.value.bot_qq || '', before_seq: requestedCursor, count: 50,
     })
     const msgs = res.data?.data?.messages || []
     if (!msgs.length) { hasMore.value = false; return }
     for (const m of msgs) prepareMessage(m)
+    const existing = new Set(history.value.map(m => String(m.message_id || m.id)))
+    const older = msgs.filter(m => !existing.has(String(m.message_id || m.id)))
+    if (!older.length) { hasMore.value = false; return }
     const el = historyRef.value
     const prevH = el ? el.scrollHeight : 0
-    history.value = [...msgs, ...history.value]
+    history.value = [...older, ...history.value]
     resolveMessageReferences(history.value)
-    oldestDate.value = res.data?.data?.oldest_date || oldestDate.value
-    hasMore.value = res.data?.data?.has_more !== false
+    historyCursor.value = String(res.data?.data?.next_cursor || '')
+    hasMore.value = res.data?.data?.has_more !== false && !!historyCursor.value && historyCursor.value !== requestedCursor
     await nextTick()
     if (el) el.scrollTop = el.scrollHeight - prevH
   } catch { hasMore.value = false }
@@ -400,10 +403,9 @@ async function sendMsg() {
   finally { sending.value = false }
 }
 
-watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; fetchChats() })
-watch(chatDays, () => { page.value = 1; fetchChats() })
-watch(chatSearch, () => { page.value = 1; fetchChatsDebounced() })
-watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
+watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; historyCursor.value = ''; hasMore.value = true; remarkEditing.value = null; groupRoles.value = {}; fetchChats() })
+watch(chatSearch, fetchChatsDebounced)
+watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; historyCursor.value = ''; hasMore.value = true; fetchChats() })
 
 onMounted(() => { fetchChats(); on('new_log', onNewLog); window.addEventListener('resize', handleResize); document.addEventListener('click', closeMobileTypeMenu) })
 onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEventListener('resize', handleResize); document.removeEventListener('click', closeMobileTypeMenu); clearImg(); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
@@ -419,11 +421,6 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
           <n-radio-group v-model:value="chatType" size="tiny">
             <n-radio-button value="group">群</n-radio-button>
             <n-radio-button value="user">好友</n-radio-button>
-          </n-radio-group>
-          <n-radio-group v-model:value="chatDays" size="tiny" class="days-sel">
-            <n-radio-button :value="1">1天</n-radio-button>
-            <n-radio-button :value="2">2天</n-radio-button>
-            <n-radio-button :value="3">3天</n-radio-button>
           </n-radio-group>
         </div>
         <n-input v-model:value="chatSearch" placeholder="搜索..." size="small" clearable class="chat-search" />
@@ -448,11 +445,6 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
             </div>
           </div>
           <div v-if="!chats.length" class="chat-empty">暂无聊天</div>
-        </div>
-        <div v-if="total > PAGE" class="chat-pager">
-          <button :disabled="page <= 1" @click="page--; fetchChats()">&lt;</button>
-          <span>{{ page }} / {{ Math.ceil(total / PAGE) }}</span>
-          <button :disabled="page >= Math.ceil(total / PAGE)" @click="page++; fetchChats()">&gt;</button>
         </div>
       </div>
 

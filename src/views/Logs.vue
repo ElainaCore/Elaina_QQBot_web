@@ -8,33 +8,16 @@ const app = useAppStore()
 const MAX = 500
 const TABS = [
   { key: 'message', label: '消息' }, { key: 'lifecycle', label: '事件' },
-  { key: 'framework', label: '框架' }, { key: 'console', label: '控制台' }, { key: 'error', label: '错误' },
+  { key: 'framework', label: '框架' }, { key: 'error', label: '错误' },
   { key: 'login', label: '登录日志' },
 ]
 const tab = ref('message')
 const autoScroll = ref(true)
-const messages = ref([]), framework = ref([]), errors = ref([]), lifecycle = ref([]), logins = ref([]), consoles = ref([])
+const messages = ref([]), framework = ref([]), errors = ref([]), lifecycle = ref([]), logins = ref([])
 const logContainer = ref(null)
 const expandedRaw = ref({})
 const expandedErr = ref({})
 const expandedMsg = ref({})
-const LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
-const activeLevels = ref(new Set(LEVELS))
-function toggleLevel(level) {
-  const next = new Set(activeLevels.value)
-  next.has(level) ? next.delete(level) : next.add(level)
-  activeLevels.value = next
-}
-function consoleLevel(entry) {
-  if (LEVELS.includes(entry?.level)) return entry.level
-  const text = String(entry?.content || entry?.message || '')
-  if (entry?.stream === 'stderr' || /\bERROR\b|Traceback|\bError\b/.test(text)) return 'ERROR'
-  if (/\bCRITICAL\b/.test(text)) return 'CRITICAL'
-  if (/\bWARNING\b|\bWARN\b/.test(text)) return 'WARNING'
-  if (/\bDEBUG\b/.test(text)) return 'DEBUG'
-  return 'INFO'
-}
-const filteredConsoles = computed(() => consoles.value.filter(entry => activeLevels.value.has(consoleLevel(entry))))
 
 function escapeHtml(s) {
   const text = s == null ? '' : String(s)
@@ -63,7 +46,6 @@ const filteredLifecycle = computed(() => app.currentBotId ? lifecycle.value.filt
 const currentLogs = computed(() =>
   tab.value === 'message' ? filteredMessages.value
   : tab.value === 'framework' ? framework.value
-  : tab.value === 'console' ? filteredConsoles.value
   : tab.value === 'lifecycle' ? filteredLifecycle.value
   : tab.value === 'login' ? logins.value
   : errors.value
@@ -74,7 +56,7 @@ let flushTimer = 0
 let scrollFrame = 0
 
 function appendLogs(type, entries) {
-  const arr = type === 'message' ? messages : type === 'framework' ? framework : type === 'console' ? consoles : (type === 'lifecycle' || type === 'event') ? lifecycle : errors
+  const arr = type === 'message' ? messages : type === 'framework' ? framework : (type === 'lifecycle' || type === 'event') ? lifecycle : errors
   arr.value = [...arr.value, ...entries].slice(-MAX)
 }
 function flushLogs() {
@@ -84,10 +66,6 @@ function flushLogs() {
   for (const [type, entry] of pendingLogs.splice(0)) {
     if (!grouped.has(type)) grouped.set(type, [])
     grouped.get(type).push(entry)
-    if (type === 'framework' || type === 'error') {
-      if (!grouped.has('console')) grouped.set('console', [])
-      grouped.get('console').push(entry)
-    }
   }
   for (const [type, entries] of grouped) appendLogs(type, entries)
 }
@@ -105,7 +83,7 @@ function onNewLog(data) {
   queueLog(t, e)
 }
 function onInit() { if (!messages.value.length) fetchLogs() }
-function clearAll() { pendingLogs.length = 0; messages.value = []; framework.value = []; errors.value = []; lifecycle.value = []; logins.value = []; consoles.value = []; expandedRaw.value = {}; expandedErr.value = {}; expandedMsg.value = {} }
+function clearAll() { pendingLogs.length = 0; messages.value = []; framework.value = []; errors.value = []; lifecycle.value = []; logins.value = []; expandedRaw.value = {}; expandedErr.value = {}; expandedMsg.value = {} }
 
 async function fetchLogs() {
   try {
@@ -114,7 +92,6 @@ async function fetchLogs() {
     framework.value = normalizeLogs(res.data.framework)
     errors.value = normalizeLogs(res.data.error)
     lifecycle.value = normalizeLogs(res.data.lifecycle)
-    consoles.value = normalizeLogs([...framework.value, ...errors.value])
   } catch {}
   fetchLoginLogs()
 }
@@ -149,9 +126,6 @@ watch(() => app.currentBotId, () => fetchLogs())
       <div class="log-tabs ui-pills">
         <button v-for="t in TABS" :key="t.key" :class="['ui-pill', { active: tab === t.key }]" @click="tab = t.key">{{ t.label }}</button>
       </div>
-      <div v-if="tab === 'console'" class="level-filter">
-        <button v-for="level in LEVELS" :key="level" :class="['level-pill', 'lp-' + level.toLowerCase(), { off: !activeLevels.has(level) }]" @click="toggleLevel(level)">{{ level }}</button>
-      </div>
       <div class="log-actions">
         <label class="auto-label"><input type="checkbox" v-model="autoScroll" /> 自动滚动 </label>
         <button class="tool-btn" @click="clearAll">清空</button>
@@ -177,13 +151,6 @@ watch(() => app.currentBotId, () => fetchLogs())
         <template v-else-if="tab === 'framework'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span :class="['t-level', (e.level || 'INFO').toLowerCase()]">{{ e.level || 'INFO' }}</span>
-          <span v-if="e.source" class="t-source">[{{ e.source }}]</span>
-          <span class="t-content">{{ e.content || e.message || '' }}</span>
-        </template>
-        <!-- 控制台日志 -->
-        <template v-else-if="tab === 'console'">
-          <span class="t-time">{{ e.timestamp }}</span>
-          <span :class="['t-level', consoleLevel(e).toLowerCase()]">{{ consoleLevel(e) }}</span>
           <span v-if="e.source" class="t-source">[{{ e.source }}]</span>
           <span class="t-content">{{ e.content || e.message || '' }}</span>
         </template>
@@ -246,28 +213,6 @@ watch(() => app.currentBotId, () => fetchLogs())
   align-items:center;
   gap:10px
 }
-.level-filter {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.level-pill {
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg2);
-  color: var(--text2);
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 600;
-}
-.level-pill.off { opacity: .35; }
-.level-pill:hover { border-color: var(--accent); color: var(--text); }
-.level-pill.lp-debug { color: var(--text3); }
-.level-pill.lp-info { color: var(--info); }
-.level-pill.lp-warning { color: var(--warning); }
-.level-pill.lp-error,.level-pill.lp-critical { color: var(--danger); }
 .auto-label {
   color:var(--text2);
   font-size:12px;
