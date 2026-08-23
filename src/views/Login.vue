@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { NButton, NCard, NForm, NFormItem, NInput, NTooltip, useMessage } from 'naive-ui'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
@@ -32,8 +32,8 @@ async function handleLogin() {
   <div class="login-page">
     <div class="login-box">
       <div class="login-logo">
-        <img class="login-logo-icon" src="/favicon.svg" alt="Elaina-QQ" />
-        <h1>Elaina-QQ 管理面板</h1>
+        <img class="login-logo-icon" src="/favicon.svg" alt="ElainaQQ" />
+        <h1>ElainaQQ 管理面板</h1>
         <p>请输入管理员密码登录</p>
       </div>
       <n-card class="login-card" :bordered="false">

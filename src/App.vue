@@ -1,13 +1,15 @@
 <script setup>
 import { computed } from 'vue'
+import { darkTheme, NConfigProvider, NDialogProvider, NMessageProvider, NNotificationProvider } from 'naive-ui'
 import { useThemeStore } from './stores/theme'
 
 const themeStore = useThemeStore()
 const overrides = computed(() => themeStore.naiveOverrides(themeStore.theme))
+const naiveTheme = computed(() => themeStore.darkMode ? darkTheme : null)
 </script>
 
 <template>
-  <n-config-provider :theme-overrides="overrides">
+  <n-config-provider :theme="naiveTheme" :theme-overrides="overrides">
     <n-message-provider>
       <n-dialog-provider>
         <n-notification-provider>

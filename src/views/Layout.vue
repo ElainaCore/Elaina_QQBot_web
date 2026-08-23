@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import {
+  NAvatar, NButton, NDescriptions, NDescriptionsItem, NModal, NPopover,
+  NSwitch, NTag,
+} from 'naive-ui'
 import { useAppStore } from '../stores/app'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -23,6 +27,7 @@ const showDefaultPwdWarning = ref(false)
 const showRestart = ref(false)
 const restartPhase = ref('confirm')
 let restartTimer = null
+let botRefreshTimer = null
 
 const NAV_ITEMS = [
   { label: '仪表盘', key: 'Dashboard', icon: 'home' },
@@ -37,7 +42,7 @@ const NAV_ITEMS = [
 ]
 
 const currentRouteName = computed(() => route.name)
-// Bot detail modal
+// 机器人详情弹窗
 const showBotDetail = ref(false)
 const detailBot = ref(null)
 const togglingBot = ref('')
@@ -133,7 +138,7 @@ async function checkDefaultPassword() {
     const res = await axios.get('/api/auth/password-status')
     const weak = !!(res.data?.is_default || res.data?.is_weak)
     showDefaultPwdWarning.value = weak
-    if (!weak) localStorage.removeItem('elaina_weak_pwd')
+    if (!weak) localStorage.removeItem('elainaqq_weak_pwd')
     return
   } catch {}
   // 接口异常时回退到本地标记
@@ -166,6 +171,9 @@ onMounted(async () => {
   handleResize()
   window.addEventListener('resize', handleResize)
   await app.ensureBots()
+  botRefreshTimer = window.setInterval(() => {
+    if (!document.hidden) app.fetchBots()
+  }, 2000)
   app.fetchSystemInfo()
   await app.fetchWebPages()
   connect()
@@ -176,6 +184,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTimeout(restartTimer)
+  clearInterval(botRefreshTimer)
   window.removeEventListener('resize', handleResize)
   off('open', onWsOpen)
   off('close', onWsClose)
@@ -185,14 +194,14 @@ onUnmounted(() => {
 
 <template>
   <div class="layout-root">
-    <!-- Mobile overlay -->
+    <!-- 移动端遮罩层 -->
     <div v-if="mobileMenuOpen" class="mobile-overlay" @click="mobileMenuOpen = false" />
 
-    <!-- Sidebar -->
+    <!-- 侧边栏 -->
     <aside :class="['sidebar', { open: mobileMenuOpen, collapsed: app.sidebarCollapsed && !isMobile }]">
       <div class="sidebar-logo">
-        <img class="logo-icon" :src="logoSrc" alt="Elaina-QQ" />
-        <span v-if="!app.sidebarCollapsed || isMobile">Elaina-QQ</span>
+        <img class="logo-icon" :src="logoSrc" alt="ElainaQQ" />
+        <span v-if="!app.sidebarCollapsed || isMobile">ElainaQQ</span>
       </div>
 
       <nav class="sidebar-nav">
@@ -222,7 +231,7 @@ onUnmounted(() => {
       </div>
     </aside>
 
-    <!-- Main area -->
+    <!-- 主内容区 -->
     <div class="main-area">
       <header class="topbar">
         <div class="topbar-left">
@@ -230,7 +239,7 @@ onUnmounted(() => {
             <SvgIcon name="menu" :size="22" />
           </button>
 
-          <!-- Multi-bot selector -->
+          <!-- 多机器人选择器 -->
           <n-popover v-if="app.bots.length > 1" trigger="click" placement="bottom-start">
             <template #trigger>
               <div class="bot-selector">
@@ -245,7 +254,7 @@ onUnmounted(() => {
                   <span :class="['ws-dot', app.currentBot?.connected ? 'online' : app.currentBot?.connection_type === 'Webhook' ? 'waiting' : 'offline']" />
                   <span class="bot-name">{{ app.currentBot?.name || '未知' }}</span>
                   <n-tag :bordered="false" size="tiny" :type="app.currentBot?.connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px">
-                    {{ app.currentBot?.connection_type === 'Webhook' ? 'WH' : 'WS' }}
+                    {{ app.currentBot?.connection_type === 'Embedded QQ' ? 'QQ' : app.currentBot?.connection_type === 'Webhook' ? 'WH' : 'WS' }}
                   </n-tag>
                 </template>
                 <SvgIcon name="chevron-forward" :size="14" style="transform:rotate(90deg);opacity:0.5" />
@@ -269,7 +278,7 @@ onUnmounted(() => {
                   <span class="bot-qq">{{ bot.bot_qq }}</span>
                 </span>
                 <n-tag v-if="bot.enabled !== false" :bordered="false" size="tiny" :type="bot.connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px;flex-shrink:0">
-                  {{ bot.connection_type === 'Webhook' ? 'WH' : 'WS' }}
+                  {{ bot.connection_type === 'Embedded QQ' ? 'QQ' : bot.connection_type === 'Webhook' ? 'WH' : 'WS' }}
                 </n-tag>
                 <n-tag v-else :bordered="false" size="tiny" type="warning" style="font-size:10px;flex-shrink:0">已关闭</n-tag>
                 <n-switch size="small" :value="bot.enabled !== false" :loading="togglingBot === bot.bot_qq"
@@ -281,7 +290,7 @@ onUnmounted(() => {
             </div>
           </n-popover>
 
-          <!-- Single bot display -->
+          <!-- 单机器人状态 -->
           <div v-else-if="app.bots.length === 1" class="bot-selector">
             <template v-if="app.bots[0].enabled !== false">
               <img v-if="app.bots[0].avatar" :src="app.bots[0].avatar" class="bot-avatar-tiny" />
@@ -289,7 +298,7 @@ onUnmounted(() => {
               <span :class="['ws-dot', app.bots[0].connected ? 'online' : app.bots[0].connection_type === 'Webhook' ? 'waiting' : 'offline']" />
               <span class="bot-name">{{ app.bots[0].name || '未知' }}</span>
               <n-tag :bordered="false" size="tiny" :type="app.bots[0].connection_type === 'Webhook' ? 'info' : 'success'" style="font-size:10px">
-                {{ app.bots[0].connection_type === 'Webhook' ? 'WH' : 'WS' }}
+                {{ app.bots[0].connection_type === 'Embedded QQ' ? 'QQ' : app.bots[0].connection_type === 'Webhook' ? 'WH' : 'WS' }}
               </n-tag>
             </template>
             <template v-else>
@@ -309,20 +318,20 @@ onUnmounted(() => {
         </div>
 
         <div class="topbar-right">
-          <!-- GitHub -->
+          <!-- 代码仓库入口 -->
           <a href="https://github.com/ElainaCore/Elaina_QQBot" target="_blank" rel="noopener"
             title="GitHub" class="github-link">
             <SvgIcon name="github" :size="18" />
           </a>
 
-          <!-- Dark mode -->
+          <!-- 深色模式 -->
           <n-button quaternary circle size="small"
             :title="themeStore.darkMode ? '切换日间模式' : '切换夜间模式'"
             @click="themeStore.toggleDark($event)">
             <template #icon><SvgIcon :name="themeStore.darkMode ? 'sunny' : 'moon'" :size="18" /></template>
           </n-button>
 
-          <!-- Theme picker -->
+          <!-- 主题选择器 -->
           <n-popover trigger="click" placement="bottom-end">
             <template #trigger>
               <n-button quaternary circle size="small" title="主题">
@@ -339,17 +348,17 @@ onUnmounted(() => {
             </div>
           </n-popover>
 
-          <!-- Clear Cache -->
+          <!-- 清除缓存 -->
           <n-button quaternary circle size="small" title="清除缓存" @click="clearCache">
             <template #icon><SvgIcon name="trash" :size="18" /></template>
           </n-button>
 
-          <!-- Restart -->
+          <!-- 重启框架 -->
           <n-button quaternary circle size="small" :loading="restarting" title="重启框架" @click="openRestart">
             <template #icon><SvgIcon name="refresh" :size="18" /></template>
           </n-button>
 
-          <!-- Logout -->
+          <!-- 退出登录 -->
           <n-button quaternary circle size="small" @click="handleLogout">
             <template #icon><SvgIcon name="log-out" :size="18" /></template>
           </n-button>
@@ -365,13 +374,13 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <!-- Default password warning modal -->
+    <!-- 默认密码警告弹窗 -->
     <n-modal v-model:show="showDefaultPwdWarning" preset="dialog" type="warning"
       title="安全提醒" positive-text="前往修改" @positive-click="goConfig" closable mask-closable>
       检测到当前 Web 面板使用的是默认密码，存在安全风险，请尽快修改。
     </n-modal>
 
-    <!-- Restart modal -->
+    <!-- 重启确认弹窗 -->
     <n-modal v-model:show="showRestart"
       :mask-closable="restartPhase !== 'restarting'"
       :close-on-esc="restartPhase !== 'restarting'">
@@ -416,7 +425,7 @@ onUnmounted(() => {
       </div>
     </n-modal>
 
-    <!-- Bot detail modal -->
+    <!-- 机器人详情弹窗 -->
     <n-modal v-model:show="showBotDetail" preset="card" title="机器人详情"
       :style="{ width: isMobile ? '95vw' : '600px', maxWidth: '600px', background: 'var(--bg2)' }">
       <div v-if="detailBot" class="bot-detail">
@@ -447,610 +456,4 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-.layout-root {
-  display:flex;
-  height:100vh;
-  overflow:hidden;
-  background:var(--bg)
-}
-.sidebar {
-  width:220px;
-  flex-shrink:0;
-  background:var(--bg2);
-  display:flex;
-  flex-direction:column;
-  border-right:1px solid var(--border);
-  box-shadow:1px 0 0 var(--border);
-  transition:width .2s,transform .25s;
-  z-index:100
-}
-.sidebar.collapsed {
-  width:64px
-}
-.sidebar.collapsed .logo-text,.sidebar.collapsed .nav-item span {
-  display:none
-}
-.sidebar.collapsed .nav-item {
-  justify-content:center;
-  padding:12px 0
-}
-.sidebar-logo {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:16px;
-  border-bottom:1px solid var(--border)
-}
-.logo-icon {
-  width:32px;
-  height:32px;
-  border-radius:8px;
-  flex-shrink:0;
-  -o-object-fit:contain;
-  object-fit:contain
-}
-.logo-text {
-  color:var(--text);
-  font-weight:600;
-  font-size:16px;
-  white-space:nowrap
-}
-.sidebar-nav {
-  flex:1;
-  overflow-y:auto;
-  padding:8px 0
-}
-.nav-item {
-  display:flex;
-  align-items:center;
-  gap:11px;
-  padding:10px 14px;
-  margin:3px 10px;
-  border-radius:10px;
-  color:var(--text2);
-  cursor:pointer;
-  transition:all .15s;
-  text-decoration:none;
-  font-size:14px;
-  font-weight:500;
-  position:relative
-}
-.nav-item:hover {
-  background:var(--bg3);
-  color:var(--text)
-}
-.nav-item.active {
-  background:var(--accent-soft);
-  color:var(--accent);
-  font-weight:600
-}
-.nav-item.active::before {
-  content:"";
-  position:absolute;
-  left:-10px;
-  top:50%;
-  transform:translateY(-50%);
-  width:3px;
-  height:18px;
-  border-radius:0 3px 3px 0;
-  background:var(--accent)
-}
-.nav-divider {
-  font-size:11px;
-  color:var(--text3);
-  padding:12px 16px 4px;
-  text-transform:uppercase;
-  letter-spacing:.5px;
-  font-weight:600
-}
-.nav-label-with-badge {
-  display:inline-flex;
-  align-items:center;
-  gap:4px
-}
-.nav-badge {
-  opacity:.5;
-  flex-shrink:0
-}
-.sidebar-toggle {
-  padding:12px;
-  text-align:center;
-  border-top:1px solid var(--border);
-  cursor:pointer;
-  color:var(--text3)
-}
-.sidebar-toggle:hover {
-  color:var(--text)
-}
-.main-area {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  min-width:0
-}
-.topbar {
-  height:52px;
-  flex-shrink:0;
-  padding:0 16px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  background:var(--bg2);
-  border-bottom:1px solid var(--border)
-}
-.topbar-left {
-  display:flex;
-  align-items:center;
-  gap:8px
-}
-.bot-selector {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  padding:4px 10px;
-  border-radius:6px;
-  cursor:pointer;
-  transition:background .15s
-}
-.bot-selector:hover {
-  background:var(--border)
-}
-.bot-avatar-tiny {
-  width:22px;
-  height:22px;
-  border-radius:50%;
-  -o-object-fit:cover;
-  object-fit:cover;
-  flex-shrink:0
-}
-.bot-avatar-letter {
-  width:22px;
-  height:22px;
-  border-radius:50%;
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:11px;
-  font-weight:700;
-  color:#fff;
-  background:linear-gradient(135deg,#5865f2,#7289da)
-}
-.bot-name {
-  color:var(--text);
-  font-size:14px;
-  font-weight:600
-}
-.bot-qq {
-  color:var(--text3);
-  font-size:12px;
-  font-family:monospace
-}
-.bot-info-col {
-  display:flex;
-  flex-direction:column;
-  flex:1;
-  min-width:0
-}
-.bot-info-col .bot-name {
-  font-size:13px;
-  line-height:1.2;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis
-}
-.bot-info-col .bot-qq {
-  font-size:11px;
-  line-height:1.2
-}
-.bot-switch-list {
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:260px
-}
-.bot-switch-item {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  padding:6px 10px;
-  border-radius:6px;
-  cursor:pointer;
-  font-size:13px
-}
-.bot-switch-item:hover {
-  background:var(--border)
-}
-.bot-switch-item.active {
-  background:var(--accent)
-}
-.bot-switch-item.active .bot-name {
-  color:#fff
-}
-.bot-switch-item.active .bot-qq {
-  color:#fff9
-}
-.ws-main {
-  margin-left:2px
-}
-.topbar-right {
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.github-link {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:28px;
-  height:28px;
-  border-radius:50%;
-  color:var(--text2);
-  transition:color .15s;
-  text-decoration:none
-}
-.github-link:hover {
-  color:var(--text)
-}
-.hamburger {
-  background:none;
-  border:none;
-  color:var(--text2);
-  cursor:pointer;
-  padding:4px;
-  display:flex;
-  align-items:center
-}
-.ws-dot {
-  width:8px;
-  height:8px;
-  border-radius:50%
-}
-.ws-dot.online {
-  background:var(--success);
-  box-shadow:0 0 6px var(--success)
-}
-.ws-dot.waiting {
-  background:var(--info);
-  box-shadow:0 0 6px var(--info)
-}
-.ws-dot.offline {
-  background:var(--text3)
-}
-.content {
-  flex:1;
-  overflow-y:auto;
-  padding:20px;
-  padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px))
-}
-.page-enter-active,.page-leave-active {
-  transition:opacity .15s
-}
-.page-enter-from,.page-leave-to {
-  opacity:0
-}
-.mobile-overlay {
-  position:fixed;
-  top:0;
-  right:0;
-  bottom:0;
-  left:0;
-  background:#00000080;
-  z-index:99
-}
-.theme-picker {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:4px;
-  min-width:220px;
-  max-height:320px;
-  overflow-y:auto
-}
-.theme-opt {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:6px 10px;
-  border-radius:6px;
-  cursor:pointer;
-  color:var(--text2);
-  font-size:13px
-}
-.theme-opt:hover {
-  background:var(--border);
-  color:var(--text)
-}
-.theme-opt.active {
-  color:var(--accent);
-  font-weight:600
-}
-.theme-dot {
-  width:12px;
-  height:12px;
-  border-radius:50%;
-  flex-shrink:0
-}
-.restart-modal {
-  width:min(460px, calc(100vw - 32px));
-  padding:0;
-  border-radius:18px;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  box-shadow:0 18px 60px rgba(0,0,0,.28);
-  overflow:hidden
-}
-.restart-head {
-  display:flex;
-  align-items:center;
-  gap:14px;
-  padding:22px 26px 18px;
-  background:var(--accent-soft)
-}
-.restart-icon {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  width:46px;
-  height:46px;
-  border-radius:14px;
-  background:var(--accent);
-  color:#fff;
-  box-shadow:0 6px 16px rgba(0,0,0,.18);
-  flex-shrink:0
-}
-.restart-icon.restarting svg { animation:restart-spin 1.2s linear infinite }
-.restart-icon.done { background:#18a058 }
-.restart-icon.failed { background:#d03a52 }
-@keyframes restart-spin { to { transform:rotate(360deg) } }
-.restart-title { font-size:16px; font-weight:700; color:var(--text); letter-spacing:.3px }
-.restart-sub { font-size:12px; color:var(--text2); margin-top:3px }
-.restart-steps { display:flex; flex-direction:column; padding:18px 26px 4px; position:relative }
-.restart-step {
-  position:relative;
-  display:flex;
-  align-items:flex-start;
-  gap:14px;
-  padding:0 0 22px;
-  opacity:.45;
-  transition:opacity .25s
-}
-.restart-step:last-child { padding-bottom:14px }
-.restart-step:not(:last-child)::before {
-  content:'';
-  position:absolute;
-  left:12px;
-  top:28px;
-  bottom:2px;
-  width:2px;
-  border-radius:1px;
-  background:var(--border)
-}
-.restart-step.done:not(:last-child)::before { background:#18a058 }
-.restart-step.active,.restart-step.done,.restart-step.fail { opacity:1 }
-.restart-step-num {
-  position:relative;
-  width:26px;
-  height:26px;
-  box-sizing:border-box;
-  border-radius:50%;
-  background:var(--bg3);
-  border:2px solid var(--border);
-  flex-shrink:0;
-  transition:background .25s,border-color .25s
-}
-.restart-step-num i {
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  font-style:normal;
-  font-size:12px;
-  font-weight:600;
-  line-height:1;
-  color:var(--text2)
-}
-.restart-step.active .restart-step-num {
-  border-color:var(--accent);
-  background:var(--accent-soft)
-}
-.restart-step.active .restart-step-num::after {
-  content:'';
-  position:absolute;
-  inset:-6px;
-  border-radius:50%;
-  border:2px solid transparent;
-  border-top-color:var(--accent);
-  animation:restart-spin 1s linear infinite
-}
-.restart-step.active .restart-step-num i { color:var(--accent) }
-.restart-step.done .restart-step-num { background:#18a058; border-color:#18a058 }
-.restart-step.done .restart-step-num i,.restart-step.fail .restart-step-num i { display:none }
-.restart-step.done .restart-step-num::before {
-  content:'\2713';
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  color:#fff;
-  font-size:13px;
-  font-weight:700;
-  line-height:1
-}
-.restart-step.fail .restart-step-num { background:#d03a52; border-color:#d03a52 }
-.restart-step.fail .restart-step-num::before {
-  content:'\2715';
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  color:#fff;
-  font-size:11px;
-  font-weight:700;
-  line-height:1
-}
-.restart-step b { display:block; font-size:13.5px; color:var(--text); font-weight:600; line-height:1.4 }
-.restart-step span { display:block; font-size:11.5px; color:var(--text3); margin-top:2px; line-height:1.5 }
-.restart-actions { display:flex; justify-content:flex-end; gap:10px; padding:0 26px 22px }
-.restart-btn {
-  border:none;
-  border-radius:9px;
-  padding:9px 22px;
-  font-size:13px;
-  font-weight:500;
-  cursor:pointer;
-  transition:opacity .15s,transform .1s
-}
-.restart-btn:hover:not(:disabled) { opacity:.88 }
-.restart-btn:active:not(:disabled) { transform:scale(.97) }
-.restart-btn:disabled { cursor:not-allowed; opacity:.75 }
-.restart-btn.primary { background:var(--accent); color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.15) }
-.restart-btn.ghost { background:var(--bg3); color:var(--text2); border:1px solid var(--border) }
-.bot-detail {
-  display:flex;
-  flex-direction:column;
-  gap:16px
-}
-.bd-header {
-  display:flex;
-  align-items:center;
-  gap:16px
-}
-.bd-avatar-placeholder {
-  width:72px;
-  height:72px;
-  border-radius:50%;
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:28px;
-  font-weight:700;
-  color:#fff;
-  background:linear-gradient(135deg,#5865f2,#7289da)
-}
-.bd-header-info {
-  flex:1;
-  min-width:0
-}
-.bd-name {
-  font-size:18px;
-  font-weight:700;
-  color:var(--text)
-}
-.bd-sub {
-  font-size:12px;
-  color:var(--text2);
-  margin-top:2px
-}
-.bd-desc {
-  padding:10px 14px;
-  border-radius:8px;
-  font-size:13px;
-  color:var(--text2);
-  background:var(--bg3);
-  line-height:1.6
-}
-.bd-error {
-  padding:8px 12px;
-  border-radius:6px;
-  font-size:12px;
-  color:var(--danger);
-  background:#ff4d4f14;
-  border:1px solid rgba(255,77,79,.2)
-}
-.bd-info {
-  margin-top:4px
-}
-.bd-qr-section {
-  margin-top:8px
-}
-.bd-qr-title {
-  font-size:14px;
-  font-weight:600;
-  color:var(--text);
-  margin-bottom:8px
-}
-.bd-qr-row {
-  display:flex;
-  gap:24px;
-  justify-content:center
-}
-.bd-qr-item {
-  text-align:center
-}
-.bd-qr-label {
-  font-size:12px;
-  color:var(--text2);
-  margin-bottom:6px
-}
-.bd-qr-img {
-  width:160px;
-  height:160px;
-  border-radius:8px;
-  border:1px solid var(--border);
-  background:#fff;
-  padding:4px
-}
-.bd-qr-link {
-  display:block;
-  margin-top:6px;
-  font-size:11px;
-  color:var(--accent);
-  text-decoration:none
-}
-.bd-qr-link:hover {
-  text-decoration:underline
-}
-@media(max-width:767px) {
-  .sidebar {
-  position:fixed;
-  left:0;
-  top:0;
-  bottom:0;
-  width:260px;
-  transform:translate(-100%)
-}
-.sidebar.open {
-  transform:translate(0)
-}
-.content {
-  padding:12px
-}
-.topbar {
-  padding:0 10px
-}
-.topbar-left {
-  flex:1;
-  min-width:0;
-  overflow:hidden
-}
-.bot-selector {
-  flex:1;
-  min-width:0;
-  overflow:hidden
-}
-.bot-selector .bot-name {
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  max-width:100px
-}
-.topbar-right {
-  flex-shrink:0
-}
-.bd-header {
-  flex-direction:column;
-  text-align:center
-}
-  .bd-qr-row {
-  flex-direction:column;
-  align-items:center
-  }
-  .theme-picker {
-    grid-template-columns:1fr;
-    min-width:150px
-  }
-}
-</style>
+<style scoped src="../styles/Layout.css"></style>

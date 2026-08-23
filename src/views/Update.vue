@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDialog } from 'naive-ui'
 import axios from '../utils/axios'
 import SvgIcon from '../components/SvgIcon.vue'
+import { safeExternalUrl } from '../utils/url'
 
 const dialog = useDialog()
 const ver = ref({})
@@ -95,8 +96,7 @@ async function saveMirror() { try { await axios.post('/api/update/mirror', { mir
 
 function testMirrors() {
   testing.value = true; tested.value = []
-  const token = localStorage.getItem('elaina_token') || ''
-  const es = new EventSource(`/api/update/test-mirrors?token=${token}`)
+  const es = new EventSource('/api/update/test-mirrors')
   es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.done) { es.close(); testing.value = false; return }; tested.value = [...tested.value, { ...d, _tested: true }].sort((a, b) => a.success === b.success ? a.latency - b.latency : a.success ? -1 : 1) } catch {} }
   es.onerror = () => { es.close(); testing.value = false }
 }
@@ -160,7 +160,7 @@ onUnmounted(() => { pollId++ })
         <div class="upd-log-list">
           <div v-for="log in logs" :key="log.sha" class="upd-log-item">
             <div class="upd-log-sha">
-              <a v-if="log.url" :href="log.url" target="_blank" class="upd-log-link" :title="'在 GitHub 上查看 ' + log.sha"><code>{{ log.sha }}</code></a>
+              <a v-if="safeExternalUrl(log.url)" :href="safeExternalUrl(log.url)" target="_blank" rel="noopener noreferrer" class="upd-log-link" :title="'在 GitHub 上查看 ' + log.sha"><code>{{ log.sha }}</code></a>
               <code v-else>{{ log.sha }}</code>
               <span class="upd-log-date">{{ log.date }}</span>
             </div>

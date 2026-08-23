@@ -1,9 +1,12 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { NInput, NModal, NRadioButton, NRadioGroup } from 'naive-ui'
 import { useAppStore } from '../stores/app'
 import { on, off } from '../utils/ws'
 import axios from '../utils/axios'
 import { parseMessageReference } from '../utils/messageReference'
+import { atLabel, isCostlyUrl, parseMedia, parseSegments, renderContent } from '../utils/messageRender'
+import { openExternalUrl, safeMediaUrl } from '../utils/url'
 
 const app = useAppStore()
 let _unmounted = false
@@ -60,25 +63,22 @@ const placeholder = computed(() => msgType.value === 'media' ? '输入资源 URL
 const quotedPreview = computed(() => quotedMsg.value ? buildQuotePreview(quotedMsg.value) : '')
 const mobileMsgTypeLabel = computed(() => msgTypeOptions.find(o => o.value === msgType.value)?.label || 'MD')
 const mobileMediaTypeLabel = computed(() => mediaTypeOptions.find(o => o.value === mediaFileType.value)?.label || '图片')
-const MEDIA_RE = /\[(图片|语音|视频|文件|媒体|media)](\S+)/
-
 function handleResize() { isMobile.value = window.innerWidth < 768 }
 function goBackToList() { mobileView.value = 'list'; current.value = null }
 function closeMobileTypeMenu() { mobileTypeOpen.value = false; mobileMediaOpen.value = false }
 function selectMobileMsgType(value) { msgType.value = value; closeMobileTypeMenu() }
 function selectMobileMediaType(value) { mediaFileType.value = value; closeMobileTypeMenu() }
 function getBotAvatar(bot_qq) { const bot = app.bots.find(b => b.bot_qq === bot_qq); return bot?.avatar || '' }
-function qqAvatar(qq) { return `http://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
-function groupQqAvatar(qq) { return `http://p.qlogo.cn/gh/${qq}/${qq}/100/` }
-// OneBot 的 user_id 均为真实 QQ 号, 头像统一走 q1.qlogo.cn
+function qqAvatar(qq) { return `https://q1.qlogo.cn/g?b=qq&nk=${qq}&s=100` }
+function groupQqAvatar(qq) { return `https://p.qlogo.cn/gh/${qq}/${qq}/100/` }
+// OneBot 的 user_id 均为真实 QQ 号，头像统一使用 QQ 头像服务。
+function chatKey(chat) { return String(chat?.bot_qq || '') + ':' + String(chat?.chat_id || '') }
 function avatarUrl(_bot_qq, uid) { return qqAvatar(uid) }
-function openUrl(u) { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noreferrer noopener'; a.click() }
+const openUrl = openExternalUrl
 const lightboxSrc = ref('')
-function previewImg(src) { lightboxSrc.value = src }
+function previewImg(src) { const url = safeMediaUrl(src); if (url) lightboxSrc.value = url }
 function closeLightbox() { lightboxSrc.value = '' }
-const COSTLY_DOMAINS = ['myqcloud.com', 'aliyuncs.com', 'cos.ap-']
-function isCostlyUrl(url) { return COSTLY_DOMAINS.some(d => url.includes(d)) }
-function revealImg(e) { const el = e.currentTarget; const src = el.dataset.src; if (src) { const img = document.createElement('img'); img.src = src; img.className = 'bubble-media-img'; img.style.cssText = 'max-width:160px;max-height:120px;width:auto;height:auto;border-radius:6px;display:block;cursor:pointer'; img.referrerPolicy = 'no-referrer'; img.loading = 'lazy'; img.onclick = () => previewImg(src); el.replaceWith(img) } }
+function revealImg(e) { const el = e.currentTarget; const src = safeMediaUrl(el.dataset.src); if (src) { const img = document.createElement('img'); img.src = src; img.className = 'bubble-media-img'; img.style.cssText = 'max-width:160px;max-height:120px;width:auto;height:auto;border-radius:6px;display:block;cursor:pointer'; img.referrerPolicy = 'no-referrer'; img.loading = 'lazy'; img.onclick = () => previewImg(src); el.replaceWith(img) } }
 function shortTime(t) { return t ? (t.length > 10 ? t.slice(11, 16) : t) : '' }
 function stripYear(t) { if (!t) return ''; const m = t.match(/^\d{4}-(\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?)$/); return m ? m[1] : t }
 
@@ -154,88 +154,6 @@ async function recallMsg(m) {
     recalling.value = ''
   }
 }
-function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
-
-const IMG_URL_RE = /(?:<[^>]*>)*<(https?:\/\/[^>]*(?:multimedia\.nt\.qq\.com\.cn|qqbot\.ugcimg\.cn|gchat\.qpic\.cn)[^>]*)>/
-
-const MD_IMG_RE = /!\[[^\]]*\]\(([^)]+)\)/
-
-function parseMedia(content) {
-  if (!content) return null
-  const m = content.match(MEDIA_RE)
-  if (m) { const text = content.replace(m[0], '').replace(/^\n+|\n+$/g, '').trim(); return { type: m[1], src: m[2], text } }
-  const im = content.match(IMG_URL_RE)
-  if (im) { const text = content.replace(im[0], '').replace(/^\n+|\n+$/g, '').trim(); return { type: '图片', src: im[1], text } }
-  const md = content.match(MD_IMG_RE)
-  if (md) { const text = content.replace(md[0], '').replace(/^\n+|\n+$/g, '').trim(); return { type: '图片', src: md[1], text } }
-  return null
-}
-
-function renderContent(content) {
-  if (!content) return ''
-  let text = content, kbHtml = ''
-  const ki = content.indexOf('\n[keyboard] ')
-  if (ki !== -1) {
-    text = content.slice(0, ki)
-    try {
-      const kb = JSON.parse(content.slice(ki + 12))
-      const rows = kb?.content?.rows || []
-      const _svg = 'width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"'
-      const _icons = {
-        0: `<svg ${_svg}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
-        1: `<svg ${_svg}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>`,
-        2: `<svg ${_svg}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
-      }
-      const rowsHtml = rows.map(row => {
-        const btns = (row.buttons || []).map(b => {
-          const rd = b.render_data || {}, ac = b.action || {}
-          const cls = ['kb-btn', `kb-t${ac.type ?? 2}`]; if (rd.style === 1) cls.push('kb-primary')
-          const tips = []; if (ac.data) tips.push(ac.data); if (ac.enter) tips.push('回车发送')
-          const icon = _icons[ac.type] || _icons[2]
-          return `<span class="${cls.join(' ')}"${tips.length ? ` title="${tips.join(' · ')}"` : ''}>${icon}${escapeHtml(rd.label || '?')}</span>`
-        })
-        return `<div class="kb-row">${btns.join('')}</div>`
-      })
-      if (rowsHtml.length) kbHtml = `<div class="kb-wrap">${rowsHtml.join('')}</div>`
-    } catch {}
-  }
-  let h = escapeHtml(text)
-  h = h.replace(/```([\s\S]*?)```/g, '<pre class="md-code-block">$1</pre>')
-  h = h.replace(/`([^`]+)`/g, '<code class="md-code">$1</code>')
-  h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-  h = h.replace(/\*(.+?)\*/g, '<i>$1</i>')
-  h = h.replace(/~~(.+?)~~/g, '<s>$1</s>')
-  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '')
-  h = h.replace(/\[([^\]]+)]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>')
-  h = h.replace(/\n/g, '<br>')
-  return h + kbHtml
-}
-
-// 从 raw_message (OneBot 事件 JSON) 解析消息段, 用于富文本渲染 (@蓝标 / 图片 等)
-function parseSegments(m) {
-  if (!m.raw_message || typeof m.raw_message !== 'string' || m.raw_message[0] !== '{') return null
-  let arr
-  try { arr = JSON.parse(m.raw_message).message } catch { return null }
-  if (!Array.isArray(arr) || !arr.length) return null
-  const segs = []
-  for (const seg of arr) {
-    if (!seg || typeof seg !== 'object') continue
-    const d = seg.data || {}
-    switch (seg.type) {
-      case 'text': if ((d.text ?? '') !== '') segs.push({ kind: 'text', text: String(d.text) }); break
-      case 'at': segs.push({ kind: 'at', qq: String(d.qq ?? ''), name: d.name ? String(d.name) : '' }); break
-      case 'image': segs.push({ kind: 'image', src: String(d.url || d.file || '') }); break
-      case 'face': segs.push({ kind: 'tag', text: '[表情]' }); break
-      case 'record': segs.push({ kind: 'audio', src: String(d.url || d.file || '') }); break
-      case 'video': segs.push({ kind: 'video', src: String(d.url || d.file || '') }); break
-      case 'reply': break
-      default: segs.push({ kind: 'tag', text: `[${seg.type}]` })
-    }
-  }
-  return segs.length ? segs : null
-}
-function atLabel(seg) { return seg.qq === 'all' ? '@全体成员' : `@${seg.name || seg.qq}` }
-
 let _fetchTimer = null
 async function fetchChats() {
   if (_unmounted) return
@@ -330,8 +248,8 @@ function cancelAddRemark() {
   addRemarkModalVisible.value = false
 }
 function fetchChatsDebounced() {
-  if (_fetchTimer) return
-  _fetchTimer = setTimeout(() => { _fetchTimer = null; fetchChats() }, 5000)
+  if (_fetchTimer) clearTimeout(_fetchTimer)
+  _fetchTimer = setTimeout(() => { _fetchTimer = null; fetchChats() }, 350)
 }
 
 let _selectId = 0
@@ -342,7 +260,7 @@ async function selectChat(chat) {
   if (isMobile.value) mobileView.value = 'chat'
   history.value = []
   try {
-    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: chat.chat_id, bot_qq: app.currentBotId || '' })
+    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: chat.chat_id, bot_qq: app.currentBotId || chat.bot_qq || '' })
     if (myId !== _selectId) return
     const msgs = res.data?.data?.messages || []
     for (const m of msgs) prepareMessage(m)
@@ -361,7 +279,7 @@ async function loadOlder() {
   try {
     const res = await axios.post('/api/message/history', {
       chat_type: apiChatType.value, chat_id: current.value.chat_id,
-      bot_qq: app.currentBotId || '', before_date: oldestDate.value,
+      bot_qq: app.currentBotId || current.value.bot_qq || '', before_date: oldestDate.value,
     })
     const msgs = res.data?.data?.messages || []
     if (!msgs.length) { hasMore.value = false; return }
@@ -409,11 +327,14 @@ async function onNewLog(data) {
   if (data.log_type === 'lifecycle') { onLifecycleLog(data); return }
   if (data.log_type !== 'message') return; fetchChatsDebounced(); if (!current.value) return
   const gid = data.group_id || '', uid = data.user_id || '', cid = current.value.chat_id
+  const eventBot = String(data.bot_qq || '')
+  const currentBot = String(app.currentBotId || current.value.bot_qq || '')
+  if (eventBot && currentBot && eventBot !== currentBot) return
   if ((apiChatType.value === 'group' && gid === cid) || (apiChatType.value === 'user' && uid === cid && !gid)) {
     const isSelf = data.direction === 'send'
     const nick = isSelf ? (data.bot_name || 'Bot') : await getNick(uid)
     if (_unmounted) return
-    const item = prepareMessage({ id: history.value.length, message_id: data.message_id || '', reference_id: data.reference_id || '', user_id: uid, bot_qq: data.bot_qq || app.currentBot?.bot_qq || '', bot_qq: isSelf ? (data.bot_qq || '') : '', nickname: nick, content: data.content || '', timestamp: data.timestamp || '', is_self: isSelf, source: data.source || '', raw_message: data.raw_message || '' })
+    const item = prepareMessage({ id: history.value.length, message_id: data.message_id || '', reference_id: data.reference_id || '', user_id: uid, bot_qq: data.bot_qq || currentBot, nickname: nick, content: data.content || '', timestamp: data.timestamp || '', is_self: isSelf, source: data.source || '', raw_message: data.raw_message || '' })
     history.value.push(item)
     resolveMessageReferences(history.value)
     if (isNearBottom()) nextTick(scrollBottom)
@@ -431,8 +352,8 @@ async function onLifecycleLog(data) {
   history.value.push({
     id: `lc_rt_${Date.now()}`,
     message_id: '', reference_id: '', user_id: uid,
-    bot_qq: data.bot_qq || app.currentBot?.bot_qq || '',
-    bot_qq: '', nickname: nick, content: '', timestamp: data.timestamp || '',
+    bot_qq: data.bot_qq || app.currentBot?.bot_qq || current.value.bot_qq || '',
+    nickname: nick, content: '', timestamp: data.timestamp || '',
     is_self: false, source: '', raw_message: '', recalled: false,
     event_type: evtType === 'group_member_add' ? 'member_add' : 'member_remove',
   })
@@ -451,7 +372,7 @@ function onAuditLog(data) {
   }
 }
 
-function onImgSelect(e) { const f = e.target.files?.[0]; if (f) { imgFile.value = f; imgPreview.value = URL.createObjectURL(f) }; e.target.value = '' }
+function onImgSelect(e) { const f = e.target.files?.[0]; if (f) { clearImg(); imgFile.value = f; imgPreview.value = URL.createObjectURL(f) }; e.target.value = '' }
 function clearImg() { if (imgPreview.value) URL.revokeObjectURL(imgPreview.value); imgFile.value = null; imgPreview.value = '' }
 
 function onKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg() } }
@@ -481,17 +402,17 @@ async function sendMsg() {
 
 watch(chatType, () => { current.value = null; quotedMsg.value = null; history.value = []; chats.value = []; oldestDate.value = ''; hasMore.value = true; page.value = 1; remarkEditing.value = null; groupRoles.value = {}; fetchChats() })
 watch(chatDays, () => { page.value = 1; fetchChats() })
-watch(chatSearch, () => { page.value = 1; fetchChats() })
+watch(chatSearch, () => { page.value = 1; fetchChatsDebounced() })
 watch(() => app.currentBotId, () => { current.value = null; quotedMsg.value = null; history.value = []; oldestDate.value = ''; hasMore.value = true; page.value = 1; fetchChats() })
 
 onMounted(() => { fetchChats(); on('new_log', onNewLog); window.addEventListener('resize', handleResize); document.addEventListener('click', closeMobileTypeMenu) })
-onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEventListener('resize', handleResize); document.removeEventListener('click', closeMobileTypeMenu); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
+onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEventListener('resize', handleResize); document.removeEventListener('click', closeMobileTypeMenu); clearImg(); if (_fetchTimer) { clearTimeout(_fetchTimer); _fetchTimer = null } })
 </script>
 
 <template>
   <div class="msg-page">
     <div class="msg-layout">
-      <!-- Chat list -->
+      <!-- 会话列表 -->
       <div :class="['chat-list-panel', { 'mobile-hidden': isMobile && mobileView !== 'list' }]">
         <div class="panel-header">
           <span>聊天列表</span>
@@ -507,7 +428,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
         </div>
         <n-input v-model:value="chatSearch" placeholder="搜索..." size="small" clearable class="chat-search" />
         <div class="chat-items">
-          <div v-for="c in chats" :key="c.chat_id" :class="['chat-item', { active: current?.chat_id === c.chat_id }]" @click="selectChat(c)">
+          <div v-for="c in chats" :key="chatKey(c)" :class="['chat-item', { active: current && chatKey(current) === chatKey(c) }]" @click="selectChat(c)">
             <div class="chat-avatar-wrap">
               <img v-if="chatType === 'user' && c.chat_id" class="chat-avatar" :src="qqAvatar(c.chat_id)" loading="lazy" @error="e => e.target.style.display='none'" />
               <img v-else-if="chatType === 'group' && c.chat_id" class="chat-avatar" :src="groupQqAvatar(c.chat_id)" loading="lazy" @error="e => e.target.style.display='none'" />
@@ -535,7 +456,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
         </div>
       </div>
 
-      <!-- History panel -->
+      <!-- 历史消息面板 -->
       <div :class="['chat-history-panel', { 'mobile-hidden': isMobile && mobileView !== 'chat' }]">
         <template v-if="current">
           <div class="panel-header">
@@ -544,6 +465,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
             </button>
             <span>{{ current.nickname || current.chat_id }}</span>
             <span v-if="current.nickname && current.nickname !== current.chat_id" class="panel-header-remark">({{ current.chat_id }})</span>
+            <span v-if="current.bot_qq" class="panel-header-bot">QQ: {{ current.bot_qq }}</span>
           </div>
           <div class="history-body" ref="historyRef" @scroll="onHistoryScroll">
             <div v-if="loadingOlder" class="history-hint">加载中...</div>
@@ -569,6 +491,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
               <div class="bubble-main">
                 <div class="bubble-name">
                   {{ m.nickname }}
+                  <span v-if="m.bot_qq" class="bubble-bot-tag">QQ:{{ m.bot_qq }}</span>
                   <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
                   <span v-if="msgRole(m) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(msgRole(m))]">{{ roleLabel(msgRole(m)) }}</span>
                   <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
@@ -604,7 +527,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
                       </template>
                       <audio v-else-if="m._media.type === '语音'" :src="m._media.src" controls preload="none" class="bubble-media-audio" />
                       <video v-else-if="m._media.type === '视频'" :src="m._media.src" controls preload="none" class="bubble-media-video" />
-                      <a v-else :href="m._media.src" target="_blank" class="bubble-media-link"> 📁 {{ m._media.src.split('/').pop() }}</a>
+                      <a v-else :href="m._media.src" target="_blank" rel="noopener noreferrer" class="bubble-media-link"> 📁 {{ m._media.src.split('/').pop() }}</a>
                     </template>
                     <div v-else v-html="renderContent(m.content)" style="word-break:break-all;overflow-wrap:anywhere;white-space:pre-wrap" />
                   </div>
@@ -624,7 +547,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
             <div v-if="!history.length" class="chat-empty" style="padding-top:48px">暂无消息记录，可在下方发送消息</div>
           </div>
 
-          <!-- Send area -->
+          <!-- 消息发送区 -->
           <div class="send-area">
             <div v-if="quotedMsg" class="quote-preview">
               <div class="quote-main">
@@ -646,7 +569,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
               </span>
             </div>
 
-            <!-- Normal send -->
+            <!-- 普通消息发送 -->
             <div class="send-input-row">
               <div class="mobile-type-menu" @click.stop>
                 <button type="button" class="mobile-type-trigger" @click="mobileTypeOpen = !mobileTypeOpen">
@@ -699,1074 +622,4 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
   </div>
 </template>
 
-<style scoped>
-.msg-page {
-  height:calc(100vh - 100px);
-  display:flex;
-  flex-direction:column
-}
-.msg-title {
-  color:var(--text);
-  font-size:18px;
-  font-weight:700;
-  margin:0 0 12px
-}
-.msg-layout {
-  flex:1;
-  display:flex;
-  gap:12px;
-  min-height:0
-}
-.chat-list-panel {
-  width:240px;
-  flex-shrink:0;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow-sm);
-  display:flex;
-  flex-direction:column;
-  overflow:hidden
-}
-.panel-header {
-  padding:10px 14px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:6px;
-  color:var(--text);
-  font-size:14px;
-  font-weight:600
-}
-.panel-header > span:first-child { margin-right:0 }
-.add-remark-btn {
-  background:none;
-  border:1px solid var(--border);
-  cursor:pointer;
-  color:var(--text2);
-  font-size:16px;
-  font-weight:700;
-  width:22px;
-  height:22px;
-  border-radius:4px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition:color .15s,background .15s;
-  margin-right:auto;
-  line-height:1;
-  padding:0
-}
-.add-remark-btn:hover {
-  color:var(--accent);
-  background:var(--bg-float)
-}
-.days-sel { font-weight:400 }
-.chat-search {
-  margin:8px 10px
-}
-.chat-items {
-  flex:1;
-  overflow-y:auto
-}
-.chat-item {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 14px;
-  cursor:pointer;
-  transition:background .12s
-}
-.chat-item:hover {
-  background:var(--bg3)
-}
-.chat-item.active {
-  background:var(--accent-soft)
-}
-.chat-avatar-wrap {
-  position:relative;
-  flex-shrink:0;
-  width:36px;
-  height:36px
-}
-.chat-avatar {
-  width:36px;
-  height:36px;
-  border-radius:50%;
-  -o-object-fit:cover;
-  object-fit:cover
-}
-.chat-avatar-fallback {
-  width:36px;
-  height:36px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:linear-gradient(135deg,var(--accent),var(--accent-light));
-  color:#fff;
-  font-weight:700;
-  font-size:14px
-}
-.chat-avatar-badge {
-  position:absolute;
-  bottom:-2px;
-  right:-2px;
-  width:16px;
-  height:16px;
-  border-radius:50%;
-  background:#52c41a;
-  color:#fff;
-  font-size:9px;
-  font-weight:700;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:2px solid var(--bg2);
-  line-height:1
-}
-.chat-info {
-  flex:1;
-  min-width:0
-}
-.chat-nick {
-  color:var(--text);
-  font-size:14px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.chat-id {
-  color:var(--text3);
-  font-size:11px;
-  font-family:monospace
-}
-.chat-preview {
-  color:var(--text2);
-  font-size:12px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  margin-top:2px
-}
-.chat-meta {
-  flex-shrink:0;
-  text-align:right
-}
-.chat-time {
-  color:var(--text3);
-  font-size:11px
-}
-.chat-count {
-  background:var(--accent);
-  color:#fff;
-  font-size:10px;
-  border-radius:8px;
-  padding:1px 6px;
-  margin-top:4px;
-  display:inline-block
-}
-.chat-remark-label {
-  font-size:10px;
-  color:var(--accent);
-  line-height:1.3
-}
-.remark-btn {
-  background:none;
-  border:none;
-  cursor:pointer;
-  color:var(--text3);
-  font-size:12px;
-  padding:2px 4px;
-  border-radius:4px;
-  transition:color .15s,background .15s;
-  line-height:1
-}
-.remark-btn:hover {
-  color:var(--accent);
-  background:var(--bg3)
-}
-.panel-header-remark {
-  font-size:12px;
-  color:var(--accent);
-  margin-left:4px
-}
-.chat-empty {
-  color:var(--text3);
-  text-align:center;
-  padding:32px 0;
-  font-size:13px
-}
-.chat-pager {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:10px;
-  padding:6px 10px;
-  border-top:1px solid var(--border);
-  flex-shrink:0;
-  font-size:12px;
-  color:var(--text2)
-}
-.chat-pager button {
-  background:var(--bg3);
-  border:1px solid var(--border);
-  border-radius:4px;
-  padding:2px 10px;
-  cursor:pointer;
-  color:var(--text);
-  font-size:12px;
-  transition:background .15s
-}
-.chat-pager button:hover:not(:disabled) {
-  background:var(--accent);
-  color:#fff
-}
-.chat-pager button:disabled {
-  opacity:.3;
-  cursor:default
-}
-.chat-history-panel {
-  flex:1;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius);
-  box-shadow:var(--shadow-sm);
-  display:flex;
-  flex-direction:column;
-  overflow:hidden
-}
-.history-body {
-  flex:1;
-  overflow-y:auto;
-  padding:12px 16px
-}
-.history-hint {
-  text-align:center;
-  color:var(--text3);
-  font-size:12px;
-  padding:8px 0
-}
-.event-wrap {
-  display:flex;
-  justify-content:center;
-  margin-bottom:14px
-}
-.event-box {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:6px 16px;
-  background:var(--border);
-  border-radius:16px;
-  font-size:13px;
-  color:var(--text2)
-}
-.event-avatar {
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  object-fit:cover;
-  flex-shrink:0
-}
-.event-avatar-fallback {
-  width:24px;
-  height:24px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--text3);
-  color:#fff;
-  font-size:11px;
-  font-weight:700;
-  flex-shrink:0
-}
-.event-uid {
-  font-family:monospace;
-  font-size:12px;
-  color:var(--text2);
-  max-width:160px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
-}
-.event-text {
-  color:var(--text3);
-  font-size:12px;
-  white-space:nowrap
-}
-.no-chat {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  color:var(--text3)
-}
-.bubble-wrap {
-  display:flex;
-  gap:8px;
-  margin-bottom:14px;
-  max-width:100%
-}
-.bubble-wrap.self {
-  flex-direction:row-reverse
-}
-.bubble-avatar-wrap {
-  flex-shrink:0
-}
-.msg-avatar {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  -o-object-fit:cover;
-  object-fit:cover
-}
-.msg-avatar-bot {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:linear-gradient(135deg,var(--accent),#7289da);
-  color:#fff
-}
-.msg-avatar-bot svg {
-  width:20px;
-  height:20px
-}
-.msg-avatar-fallback {
-  width:32px;
-  height:32px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--accent);
-  color:#fff;
-  font-size:12px;
-  font-weight:700
-}
-.bubble-main {
-  max-width:70%;
-  min-width:0;
-  overflow:hidden;
-  word-break:break-all;
-  overflow-wrap:anywhere
-}
-:deep(.bubble-main *) {
-  word-break:break-all !important;
-  overflow-wrap:anywhere !important
-}
-.bubble-name {
-  color:var(--text2);
-  font-size:11px;
-  margin-bottom:3px
-}
-.self .bubble-name {
-  text-align:right
-}
-.bubble-uid {
-  color:var(--text3);
-  margin-left:4px;
-  font-family:monospace;
-  font-size:10px
-}
-.bubble-ts {
-  font-size:10px;
-  color:var(--text3);
-  margin-top:2px;
-  display:block
-}
-.bubble-src-tag {
-  font-size:9px;
-  padding:0 4px;
-  border-radius:3px;
-  line-height:15px;
-  background:#e8f5e9;
-  color:#2e7d32;
-  font-weight:600;
-  margin-left:4px
-}
-.ob-tag {
-  background:#e3f2fd;
-  color:#1565c0
-}
-.bubble-role-tag {
-  font-size:9px;
-  padding:0 4px;
-  border-radius:3px;
-  line-height:15px;
-  font-weight:600;
-  margin-left:4px
-}
-.role-owner {
-  background:#fff3e0;
-  color:#e65100
-}
-.role-admin {
-  background:#e8f5e9;
-  color:#2e7d32
-}
-.role-member {
-  background:#f5f5f5;
-  color:#757575
-}
-.role-bot {
-  background:#e3f2fd;
-  color:#1565c0
-}
-.bubble {
-  display:block;
-  padding:8px 12px;
-  border-radius:10px;
-  font-size:14px;
-  word-break:break-all;
-  overflow-wrap:anywhere;
-  min-width:0;
-  background:var(--border);
-  color:var(--text)
-}
-.bubble-self {
-  background:var(--accent);
-  color:#fff
-}
-.bubble-quote-ref {
-  max-width:260px;
-  margin-bottom:6px;
-  padding:5px 8px;
-  border-left:3px solid var(--accent);
-  border-radius:6px;
-  background:rgba(255,255,255,.42);
-  color:var(--text2)
-}
-.bubble-self .bubble-quote-ref {
-  border-left-color:rgba(255,255,255,.85);
-  background:rgba(255,255,255,.18);
-  color:rgba(255,255,255,.88)
-}
-.bubble-quote-author {
-  font-size:11px;
-  font-weight:600;
-  line-height:1.3;
-  margin-bottom:2px
-}
-.bubble-quote-content {
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px;
-  line-height:1.35
-}
-.bubble-media-img {
-  max-width:160px !important;
-  max-height:120px !important;
-  width:auto !important;
-  height:auto !important;
-  border-radius:6px;
-  display:block;
-  cursor:pointer;
-  object-fit:contain
-}
-.bubble-media-img:hover {
-  opacity:.9
-}
-.bubble-media-placeholder {
-  display:inline-block;
-  padding:8px 14px;
-  background:rgba(100,180,255,.15);
-  border:1px dashed rgba(100,180,255,.5);
-  border-radius:6px;
-  color:#7ab8ff;
-  cursor:pointer;
-  font-size:13px;
-  user-select:none
-}
-.bubble-media-placeholder:hover {
-  background:rgba(100,180,255,.25);
-  color:#a0d0ff
-}
-.bubble-media-audio {
-  display:block;
-  max-width:260px;
-  height:32px
-}
-.bubble-media-video {
-  max-width:320px;
-  max-height:220px;
-  border-radius:6px;
-  display:block
-}
-.bubble-media-link {
-  color:var(--accent);
-  text-decoration:none;
-  font-size:13px;
-  display:inline-flex;
-  align-items:center;
-  gap:4px
-}
-.bubble-media-link:hover {
-  text-decoration:underline
-}
-.bubble-media-text {
-  display:block;
-  margin-top:4px;
-  font-size:13px;
-  word-break:break-all;
-  word-wrap:break-word;
-  white-space:pre-wrap
-}
-.bubble-at {
-  color:#3b82f6;
-  font-weight:600;
-  background:#3b82f614;
-  border-radius:4px;
-  padding:0 3px;
-}
-.bubble-self .bubble-at { color:#dbeafe; background:#ffffff26; }
-:deep(.md-code) {
-  background:#00000026;
-  padding:1px 4px;
-  border-radius:3px;
-  font-size:12px;
-  font-family:monospace
-}
-:deep(.bubble-self .md-code) {
-  background:#fff3
-}
-:deep(.md-code-block) {
-  background:#0000001f;
-  padding:6px 8px;
-  border-radius:5px;
-  font-size:12px;
-  font-family:monospace;
-  white-space:pre-wrap !important;
-  word-break:break-all !important;
-  overflow-wrap:anywhere !important;
-  margin:4px 0;
-  display:block;
-  max-width:100%
-}
-:deep(.bubble-self .md-code-block) {
-  background:#ffffff26
-}
-:deep(.md-link) {
-  color:var(--accent);
-  text-decoration:underline
-}
-:deep(.bubble-self .md-link) {
-  color:#b3d4ff
-}
-:deep(.kb-wrap) {
-  margin-top:6px;
-  display:flex;
-  flex-direction:column;
-  gap:6px
-}
-:deep(.kb-row) {
-  display:flex;
-  gap:6px;
-  flex-wrap:wrap
-}
-:deep(.kb-btn) {
-  display:inline-flex;
-  align-items:center;
-  gap:3px;
-  background:var(--accent);
-  color:#fff;
-  border:1px solid var(--accent);
-  border-radius:6px;
-  padding:4px 10px;
-  font-size:11px;
-  font-weight:500;
-  cursor:default;
-  white-space:nowrap
-}
-:deep(.kb-btn.kb-t0) {
-  background:var(--info);
-  border-color:var(--info)
-}
-:deep(.bubble-self .kb-btn) {
-  background:#ffffff30;
-  border-color:#ffffff50
-}
-.bubble-row {
-  display:flex;
-  align-items:flex-end;
-  gap:6px;
-  min-width:0;
-  max-width:100%
-}
-.self .bubble-row {
-  flex-direction:row-reverse
-}
-.bubble-actions {
-  display:grid;
-  grid-template-rows:repeat(2, 17px);
-  grid-auto-flow:column;
-  grid-auto-columns:max-content;
-  gap:2px;
-  opacity:0;
-  transition:opacity .15s
-}
-.bubble-row:hover .bubble-actions {
-  opacity:1
-}
-.action-btn {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:4px;
-  color:var(--text2);
-  font-size:10px;
-  min-width:24px;
-  height:17px;
-  padding:0 5px;
-  cursor:pointer;
-  white-space:nowrap;
-  line-height:1;
-  display:flex;
-  align-items:center;
-  justify-content:center
-}
-.action-btn:hover {
-  color:var(--accent);
-  border-color:var(--accent)
-}
-.action-btn.recall:hover:not(:disabled) {
-  color:var(--danger);
-  border-color:var(--danger)
-}
-.action-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.recalled-tag {
-  display:inline-block;
-  background:rgba(255,152,0,.15);
-  color:#e65100;
-  font-size:11px;
-  padding:1px 6px;
-  border-radius:3px;
-  margin-bottom:4px
-}
-.audit-reject {
-  background:rgba(244,67,54,.15);
-  color:#c62828
-}
-.audit-tag {
-  display:inline-block;
-  background:rgba(33,150,243,.12);
-  color:#1565c0;
-  font-size:11px;
-  padding:1px 6px;
-  border-radius:3px;
-  margin-bottom:4px
-}
-.raw-data-box {
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:8px 10px;
-  font-size:11px;
-  color:var(--text2);
-  margin-top:4px;
-  max-height:200px;
-  overflow:auto;
-  white-space:pre-wrap;
-  word-break:break-all
-}
-.send-area {
-  border-top:1px solid var(--border);
-  padding:10px 14px;
-  flex-shrink:0
-}
-.quote-preview {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:8px;
-  padding:7px 10px;
-  border-left:3px solid var(--accent);
-  border-radius:6px;
-  background:var(--bg3);
-  color:var(--text2);
-  min-width:0
-}
-.quote-main {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-  min-width:0
-}
-.quote-title {
-  color:var(--accent);
-  font-size:12px;
-  font-weight:600
-}
-.quote-text {
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:12px
-}
-.quote-clear {
-  width:22px;
-  height:22px;
-  border:1px solid var(--border);
-  border-radius:5px;
-  background:var(--bg2);
-  color:var(--text3);
-  cursor:pointer;
-  line-height:18px;
-  flex-shrink:0
-}
-.quote-clear:hover {
-  color:var(--danger);
-  border-color:var(--danger)
-}
-.send-toolbar {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:6px
-}
-.send-type-select {
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:6px;
-  padding:3px 8px;
-  font-size:12px;
-  cursor:pointer;
-  outline:none
-}
-.mobile-type-select {
-  display:none
-}
-.mobile-type-menu {
-  display:none
-}
-.mobile-type-trigger {
-  height:100%;
-  min-width:48px;
-  border:1px solid var(--border);
-  border-radius:6px;
-  background:var(--bg3);
-  color:var(--text);
-  font-size:12px;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:5px
-}
-.mobile-type-caret {
-  width:0;
-  height:0;
-  border-left:4px solid transparent;
-  border-right:4px solid transparent;
-  border-bottom:5px solid currentColor;
-  opacity:.75
-}
-.mobile-type-options {
-  position:absolute;
-  left:0;
-  bottom:calc(100% + 6px);
-  z-index:20;
-  min-width:86px;
-  padding:4px;
-  border:1px solid var(--border);
-  border-radius:8px;
-  background:var(--bg2);
-  box-shadow:0 10px 28px rgba(0,0,0,.25)
-}
-.mobile-type-options button {
-  width:100%;
-  border:0;
-  border-radius:5px;
-  background:transparent;
-  color:var(--text);
-  padding:7px 9px;
-  text-align:left;
-  font-size:12px;
-  cursor:pointer
-}
-.mobile-type-options button:hover,
-.mobile-type-options button.active {
-  background:var(--accent);
-  color:#fff
-}
-.send-img-label {
-  cursor:pointer;
-  display:flex;
-  align-items:center
-}
-.send-icon {
-  width:20px;
-  height:20px;
-  color:var(--text2);
-  transition:color .15s
-}
-.send-img-label:hover .send-icon {
-  color:var(--accent)
-}
-.send-img-tag {
-  font-size:11px;
-  color:var(--accent);
-  background:var(--bg3);
-  border-radius:4px;
-  padding:2px 6px;
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.send-img-preview {
-  width:24px;
-  height:24px;
-  border-radius:3px;
-  -o-object-fit:cover;
-  object-fit:cover;
-  flex-shrink:0
-}
-.send-img-remove {
-  cursor:pointer;
-  font-size:14px;
-  color:var(--text3)
-}
-.send-img-remove:hover {
-  color:var(--danger)
-}
-.ark-form {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  margin-top:4px
-}
-.ark-grid {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:4px 12px
-}
-.ark-field {
-  display:flex;
-  align-items:center;
-  gap:4px
-}
-.ark-field label {
-  font-size:10px;
-  color:var(--text3);
-  min-width:80px;
-  flex-shrink:0;
-  text-align:right;
-  font-family:monospace
-}
-.ark-field input {
-  flex:1;
-  min-width:0;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:5px;
-  padding:4px 6px;
-  font-size:12px;
-  outline:none;
-  transition:border-color .15s
-}
-.ark-field input:focus {
-  border-color:var(--accent)
-}
-.ark-hint {
-  font-size:11px;
-  color:var(--text3);
-  margin-top:2px
-}
-.ark-send-btn {
-  align-self:flex-end;
-  margin-top:4px
-}
-.send-input-row {
-  display:flex;
-  gap:8px
-}
-.send-input {
-  flex:1;
-  resize:none;
-  background:var(--bg3);
-  color:var(--text);
-  border:1px solid var(--border);
-  border-radius:8px;
-  padding:8px 10px;
-  font-size:13px;
-  outline:none;
-  font-family:inherit;
-  transition:border-color .15s
-}
-.send-input:focus {
-  border-color:var(--accent)
-}
-.send-btn {
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:0 20px;
-  font-size:13px;
-  font-weight:600;
-  cursor:pointer;
-  transition:opacity .15s;
-  align-self:flex-end;
-  height:36px
-}
-.send-btn:hover {
-  opacity:.85
-}
-.send-btn:disabled {
-  opacity:.4;
-  cursor:default
-}
-.send-hint {
-  font-size:11px;
-  color:var(--text3);
-  margin-top:4px
-}
-.send-error {
-  font-size:12px;
-  color:var(--danger);
-  margin-top:4px
-}
-.mobile-back-btn {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  width:28px;
-  height:28px;
-  border:none;
-  background:var(--bg3);
-  border-radius:6px;
-  color:var(--text);
-  cursor:pointer;
-  flex-shrink:0;
-  transition:background .15s
-}
-.mobile-back-btn:hover {
-  background:var(--border)
-}
-.mobile-back-btn svg {
-  width:18px;
-  height:18px
-}
-@media(max-width:767px) {
-  .msg-page {
-  height:calc(100vh - 60px)
-}
-.msg-layout {
-  flex-direction:column;
-  height:100%
-}
-.chat-list-panel {
-  width:100%;
-  max-height:none;
-  height:100%;
-  flex:1;
-  border-radius:10px
-}
-.chat-list-panel.mobile-hidden {
-  display:none
-}
-.chat-history-panel {
-  width:100%;
-  height:100%;
-  flex:1;
-  border-radius:10px
-}
-.chat-history-panel.mobile-hidden {
-  display:none
-}
-.bubble-main {
-  max-width:85%
-}
-.history-body {
-  padding:10px
-}
-.send-area {
-  padding:8px 10px
-}
-.send-toolbar {
-  display:none
-}
-.send-input-row {
-  flex-direction:row;
-  align-items:flex-end;
-  gap:6px
-}
-.mobile-type-menu {
-  display:block;
-  position:relative;
-  flex-shrink:0;
-  align-self:stretch
-}
-.send-input {
-  flex:1;
-  min-width:0
-}
-.ark-mobile-select {
-  display:block;
-  position:relative;
-  margin-bottom:6px;
-  width:54px;
-  height:32px
-}
-.send-btn {
-  width:auto;
-  height:auto;
-  padding:6px 12px;
-  font-size:12px;
-  flex-shrink:0;
-  align-self:stretch
-}
-.panel-header {
-  padding:8px 10px;
-  font-size:13px
-}
-.ark-grid {
-  grid-template-columns:1fr
-}
-.msg-title {
-  font-size:16px;
-  margin:0 0 8px
-}
-}
-.lightbox-overlay {
-  position:fixed;
-  top:0;left:0;right:0;bottom:0;
-  background:rgba(0,0,0,.75);
-  z-index:9999;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer
-}
-.lightbox-img {
-  max-width:90vw;
-  max-height:90vh;
-  object-fit:contain;
-  border-radius:8px;
-  cursor:default
-}
-.lightbox-close {
-  position:fixed;
-  top:16px;right:24px;
-  color:#fff;
-  font-size:36px;
-  cursor:pointer;
-  line-height:1
-}
-</style>
+<style scoped src="../styles/Messages.css"></style>

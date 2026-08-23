@@ -10,6 +10,19 @@ html, body, #app {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 黑夜/白天主题圆形扩散过渡 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+html.vt-reverse::view-transition-old(root) { z-index: 2; }
+html.vt-reverse::view-transition-new(root) { z-index: 1; }
+::view-transition-group(root) { animation: none; }
+html.vt-active { pointer-events: none; }
+
 /* 滚动条 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

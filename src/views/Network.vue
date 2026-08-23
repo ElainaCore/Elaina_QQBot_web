@@ -1,6 +1,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useMessage, useDialog } from 'naive-ui'
+import {
+  NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSwitch,
+  NTag, useDialog, useMessage,
+} from 'naive-ui'
 import axios from '../utils/axios'
 import SvgIcon from '../components/SvgIcon.vue'
 
@@ -26,16 +29,21 @@ const TYPES = {
 const TYPE_OPTIONS = Object.entries(TYPES).map(([value, t]) => ({ label: `${t.label} · ${t.sub}`, value }))
 
 const statusMap = computed(() => {
-  const m = {}
-  for (const s of statusList.value) m[s.name] = s
-  return m
+  const map = {}
+  for (const status of statusList.value) map[status.name] = status
+  return map
 })
 
 function statusOf(conn) {
-  const s = statusMap.value[conn.name]
+  const status = statusMap.value[conn.name]
   if (!conn.enable) return { type: 'default', text: '已禁用' }
-  if (s?.connected) return { type: 'success', text: s.self_id && !String(s.self_id).startsWith('forward:') ? `已连接 · ${s.self_id}` : '已连接' }
-  if (s?.error) return { type: 'warning', text: s.error }
+  if (status?.connected) {
+    const text = status.self_id && !String(status.self_id).startsWith('forward:')
+      ? `已连接 · ${status.self_id}`
+      : '已连接'
+    return { type: 'success', text }
+  }
+  if (status?.error) return { type: 'warning', text: status.error }
   return { type: 'warning', text: '未连接' }
 }
 
@@ -57,8 +65,11 @@ async function fetchData() {
       statusList.value = res.data.status || []
       Object.assign(server, res.data.server || {})
     }
-  } catch { msg.error('获取网络配置失败') }
-  finally { loading.value = false }
+  } catch {
+    msg.error('获取网络配置失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function persist(successText) {
@@ -73,25 +84,28 @@ async function persist(successText) {
       return true
     }
     msg.error(res.data?.error || '保存失败')
-  } catch (e) { msg.error('保存失败: ' + (e.response?.data?.error || e.message || '')) }
-  finally { saving.value = false }
+  } catch (error) {
+    msg.error('保存失败: ' + (error.response?.data?.error || error.message || ''))
+  } finally {
+    saving.value = false
+  }
   return false
 }
 
-async function toggleEnable(conn, val) {
-  conn.enable = val
-  await persist(val ? `已启用「${conn.name}」` : `已禁用「${conn.name}」`)
+async function toggleEnable(conn, value) {
+  conn.enable = value
+  await persist(value ? `已启用「${conn.name}」` : `已禁用「${conn.name}」`)
 }
 
-// ── 编辑 / 新增弹窗 ──
 const showEdit = ref(false)
 const editIndex = ref(-1)
 const form = reactive({ type: 'ws_reverse', name: '', enable: true, host: '', port: 5201, path: '/', url: '', token: '', secret: '', reconnect_interval: 5000 })
 
 function uniqueName(base) {
-  let name = base, i = 2
-  const names = connections.value.map((c, idx) => idx === editIndex.value ? null : c.name)
-  while (names.includes(name)) { name = `${base} ${i++}` }
+  let name = base
+  let suffix = 2
+  const names = connections.value.map((conn, index) => index === editIndex.value ? null : conn.name)
+  while (names.includes(name)) name = `${base} ${suffix++}`
   return name
 }
 
@@ -100,15 +114,15 @@ function applyTypeDefaults() {
   form.host = server.host
   form.port = server.port
   form.path = type === 'ws_reverse' ? '/OneBotv11' : '/'
-  if (type === 'ws_forward') form.url = form.url || 'ws://127.0.0.1:3001'
-  else if (type === 'http_client') form.url = form.url || 'http://127.0.0.1:3000'
+  if (type === 'ws_forward') form.url ||= 'ws://127.0.0.1:3001'
+  else if (type === 'http_client') form.url ||= 'http://127.0.0.1:3000'
   if (editIndex.value < 0 && (!form.name || form.name.startsWith('新连接'))) {
     form.name = uniqueName(TYPES[type].label)
   }
 }
 
-function onTypeChange(val) {
-  form.type = val
+function onTypeChange(value) {
+  form.type = value
   form.url = ''
   applyTypeDefaults()
 }
@@ -119,19 +133,29 @@ function openAdd() {
     type: 'ws_reverse', name: '', enable: true, token: '', secret: '',
     host: server.host, port: server.port, path: '/OneBotv11', url: '', reconnect_interval: 5000,
   })
-  form.name = uniqueName(TYPES['ws_reverse'].label)
+  form.name = uniqueName(TYPES.ws_reverse.label)
   showEdit.value = true
 }
 
 function openEdit(conn) {
   editIndex.value = connections.value.indexOf(conn)
-  Object.assign(form, { host: server.host, port: server.port, path: '/', url: '', token: '', secret: '', reconnect_interval: 5000 }, JSON.parse(JSON.stringify(conn)))
+  Object.assign(
+    form,
+    { host: server.host, port: server.port, path: '/', url: '', token: '', secret: '', reconnect_interval: 5000 },
+    JSON.parse(JSON.stringify(conn)),
+  )
   showEdit.value = true
 }
 
 async function confirmEdit() {
-  if (!form.name.trim()) { msg.warning('请填写名称'); return }
-  if (TYPES[form.type].mode === 'client' && !form.url.trim()) { msg.warning('请填写连接 URL'); return }
+  if (!form.name.trim()) {
+    msg.warning('请填写名称')
+    return
+  }
+  if (TYPES[form.type].mode === 'client' && !form.url.trim()) {
+    msg.warning('请填写连接 URL')
+    return
+  }
   const item = JSON.parse(JSON.stringify(form))
   if (editIndex.value >= 0) connections.value.splice(editIndex.value, 1, item)
   else connections.value.push(item)
@@ -143,21 +167,23 @@ function removeConn(conn) {
   dialog.warning({
     title: '删除连接',
     content: `确定删除连接「${conn.name}」？`,
-    positiveText: '删除', negativeText: '取消',
+    positiveText: '删除',
+    negativeText: '取消',
     onPositiveClick: async () => {
-      const i = connections.value.indexOf(conn)
-      if (i >= 0) connections.value.splice(i, 1)
+      const index = connections.value.indexOf(conn)
+      if (index >= 0) connections.value.splice(index, 1)
       await persist('已删除')
     },
   })
 }
 
-function copyText(text) {
-  navigator.clipboard?.writeText(text).then(() => msg.success('已复制')).catch(() => {})
+function copyText(value) {
+  navigator.clipboard?.writeText(value)
+    .then(() => msg.success('已复制'))
+    .catch(() => {})
 }
 
 onMounted(fetchData)
-
 defineExpose({ openAdd, fetchData })
 </script>
 
@@ -188,9 +214,9 @@ defineExpose({ openAdd, fetchData })
           <span class="net-card-name">{{ conn.name }}</span>
           <n-tag size="tiny" :bordered="false" round class="net-type-tag">{{ TYPES[conn.type].label }}</n-tag>
           <span class="net-card-spacer" />
-          <n-switch size="small" :value="conn.enable" @update:value="v => toggleEnable(conn, v)" />
+          <n-switch size="small" :value="conn.enable" @update:value="value => toggleEnable(conn, value)" />
         </div>
-        <div class="net-card-endpoint" @click="copyText(endpointOf(conn))" :title="'点击复制: ' + endpointOf(conn)">
+        <div class="net-card-endpoint" :title="'点击复制: ' + endpointOf(conn)" @click="copyText(endpointOf(conn))">
           <SvgIcon name="link" :size="13" />
           <span class="net-ep-text">{{ endpointOf(conn) }}</span>
           <SvgIcon name="copy" :size="13" class="net-ep-copy" />
@@ -205,9 +231,7 @@ defineExpose({ openAdd, fetchData })
         </div>
       </div>
     </div>
-    <div v-else-if="!loading" class="net-empty">
-      暂无连接，点击右上角「新建」添加一个连接
-    </div>
+    <div v-else-if="!loading" class="net-empty">暂无连接，点击右上角「新建」添加一个连接</div>
 
     <n-modal v-model:show="showEdit" preset="card" :title="editIndex >= 0 ? '编辑连接' : '新建连接'" style="max-width:480px" :bordered="false">
       <n-form label-placement="top" size="small">
@@ -215,9 +239,7 @@ defineExpose({ openAdd, fetchData })
           <n-select :value="form.type" :options="TYPE_OPTIONS" :disabled="editIndex >= 0" @update:value="onTypeChange" />
         </n-form-item>
         <p class="net-form-desc">{{ TYPES[form.type].desc }}</p>
-        <n-form-item label="名称（唯一）">
-          <n-input v-model:value="form.name" placeholder="连接名称" />
-        </n-form-item>
+        <n-form-item label="名称（唯一）"><n-input v-model:value="form.name" placeholder="连接名称" /></n-form-item>
 
         <template v-if="TYPES[form.type].mode === 'client'">
           <n-form-item :label="form.type === 'ws_forward' ? 'WebSocket 地址' : 'HTTP API 地址'">
@@ -229,16 +251,10 @@ defineExpose({ openAdd, fetchData })
         </template>
 
         <template v-else>
-          <n-form-item label="监听地址 (host)">
-            <n-input v-model:value="form.host" placeholder="0.0.0.0" />
-          </n-form-item>
-          <n-form-item label="监听端口 (port)">
-            <n-input-number v-model:value="form.port" :min="1" :max="65535" style="width:100%" />
-          </n-form-item>
-          <p class="net-form-desc">与面板端口 ({{ server.port }}) 相同时复用主服务；填写不同端口则独立监听 (适用于容器部署)。</p>
-          <n-form-item label="路径">
-            <n-input v-model:value="form.path" placeholder="/OneBotv11" />
-          </n-form-item>
+          <n-form-item label="监听地址 (host)"><n-input v-model:value="form.host" placeholder="0.0.0.0" /></n-form-item>
+          <n-form-item label="监听端口 (port)"><n-input-number v-model:value="form.port" :min="1" :max="65535" style="width:100%" /></n-form-item>
+          <p class="net-form-desc">与面板端口 ({{ server.port }}) 相同时复用主服务；填写不同端口则独立监听。</p>
+          <n-form-item label="路径"><n-input v-model:value="form.path" placeholder="/OneBotv11" /></n-form-item>
         </template>
 
         <n-form-item label="Access Token（可选）">
@@ -259,11 +275,7 @@ defineExpose({ openAdd, fetchData })
 </template>
 
 <style scoped>
-.net-page { padding: 4px 2px 24px }
-.net-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:18px }
-.net-head-actions { display:flex; gap:8px; flex-shrink:0 }
-.net-title { font-size:18px; font-weight:600; margin:0 }
-.net-sub { margin:4px 0 0; font-size:12.5px; color:var(--text2); line-height:1.5; max-width:680px }
+.net-page { padding:4px 2px 24px }
 .net-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px }
 .net-card { border:1px solid var(--border); border-radius:var(--radius); padding:16px; background:var(--bg2); box-shadow:var(--shadow-sm); transition:transform .15s,box-shadow .15s }
 .net-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-hover) }

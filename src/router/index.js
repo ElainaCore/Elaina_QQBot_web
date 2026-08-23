@@ -33,15 +33,14 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async to => {
   const auth = useAuthStore()
+  if (!auth.checked) await auth.checkSession()
   if (to.meta.auth && !auth.isLoggedIn) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-  } else if (to.meta.guest && auth.isLoggedIn) {
-    next({ name: 'Dashboard' })
-  } else {
-    next()
+    return { name: 'Login', query: { redirect: to.fullPath } }
   }
+  if (to.meta.guest && auth.isLoggedIn) return { name: 'Dashboard' }
+  return true
 })
 
 export default router

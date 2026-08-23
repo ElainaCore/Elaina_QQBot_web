@@ -3,6 +3,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import axios from '../utils/axios'
 import SvgIcon from '../components/SvgIcon.vue'
+import { safeExternalUrl } from '../utils/url'
 
 const msg = useMessage()
 const items = ref([])
@@ -13,7 +14,26 @@ const loading = ref(false)
 const error = ref('')
 const preview = reactive({ show: false, name: '', type: '', content: '', files: [], loading: false, error: '' })
 // 规范化清单类型: complete(完整插件) / single(独立插件) / module(模块)
-function normType(i) { const t = (i.type || '').toLowerCase(); if (t === 'module') return 'module'; if (t === 'single' || t === 'standalone' || t === 'alone') return 'single'; return 'complete' }
+function normType(i) { const t = String(i?.type || '').toLowerCase(); if (t === 'module') return 'module'; if (t === 'single' || t === 'standalone' || t === 'alone') return 'single'; return 'complete' }
+function normalizeItem(item) {
+  if (!item || typeof item !== 'object') return null
+  return {
+    ...item,
+    name: String(item.name || ''),
+    description: String(item.description || ''),
+    author: String(item.author || ''),
+    category: String(item.category || ''),
+    type: String(item.type || ''),
+    github: safeExternalUrl(item.github),
+    download_url: safeExternalUrl(item.download_url),
+    path: String(item.path || ''),
+    branch: String(item.branch || 'main'),
+    tags: (Array.isArray(item.tags) ? item.tags : []).map(tag => String(tag)).filter(Boolean),
+    _installing: false,
+    _previewing: false,
+    _uninstalling: false,
+  }
+}
 const isModule = computed(() => type.value === 'module')
 
 // ── 镜像选择 ──
@@ -25,7 +45,8 @@ const mirrorTesting = ref('')    // 正在测试的镜像 URL
 
 function mirrorLabel(m) {
   if (!m) return '直连 GitHub'
-  try { return new URL(m).hostname } catch { return m.slice(0, 30) }
+  const value = String(m)
+  try { return new URL(value).hostname } catch { return value.slice(0, 30) }
 }
 function mirrorLatency(m) {
   const r = fastMirrors.value.find(x => (typeof x === 'string' ? x : x.mirror) === m)
@@ -37,9 +58,9 @@ async function fetchMirror() {
   try {
     const res = await axios.get('/api/market/mirror')
     if (res.data.success) {
-      mirrorList.value = res.data.mirrors || []
-      fastMirrors.value = res.data.fast_mirrors || []
-      selectedMirror.value = res.data.mirror || ''
+      mirrorList.value = (Array.isArray(res.data.mirrors) ? res.data.mirrors : []).map(String)
+      fastMirrors.value = Array.isArray(res.data.fast_mirrors) ? res.data.fast_mirrors : []
+      selectedMirror.value = String(res.data.mirror || '')
     }
   } catch {}
 }
@@ -71,7 +92,7 @@ const filtered = computed(() => {
   let list = items.value.filter(i => normType(i) === type.value)
   if (category.value) list = list.filter(i => i.category === category.value)
   const q = search.value.toLowerCase()
-  if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q) || (i.author || '').toLowerCase().includes(q) || (i.tags || []).some(t => t.toLowerCase().includes(q)))
+  if (q) list = list.filter(i => i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q) || i.author.toLowerCase().includes(q) || i.tags.some(t => t.toLowerCase().includes(q)))
   return list
 })
 
@@ -81,13 +102,13 @@ const categories = computed(() => {
 })
 
 function avatarUrl(item) { const m = (item.github || '').match(/github\.com\/([^/]+)/); return m ? `https://github.com/${m[1]}.png?size=80` : '' }
-function isOfficial(item) { return (item.github || '').includes('ElainaCore/') || (item.author || '').toLowerCase() === 'elainabot' }
-function filteredTags(item) { const cat = (item.category || '').toLowerCase(); return (item.tags || []).filter(t => t.toLowerCase() !== cat) }
-function formatSize(s) { return s ? s < 1024 ? s + ' B' : s < 1024 * 1024 ? (s / 1024).toFixed(1) + ' KB' : (s / (1024 * 1024)).toFixed(1) + ' MB' : '' }
+function isOfficial(item) { return (item.github || '').includes('ElainaCore/') || (item.author || '').toLowerCase() === 'elainaqq' }
+function filteredTags(item) { const cat = item.category.toLowerCase(); return item.tags.filter(t => t.toLowerCase() !== cat) }
+function formatSize(value) { const s = Number(value) || 0; return s ? s < 1024 ? s + ' B' : s < 1024 * 1024 ? (s / 1024).toFixed(1) + ' KB' : (s / (1024 * 1024)).toFixed(1) + ' MB' : '' }
 
 async function fetchList() {
   loading.value = true; error.value = ''
-  try { const res = await axios.get('/api/market/list'); if (res.data.success) items.value = (res.data.data || []).map(i => ({ ...i, _installing: false, _previewing: false, _uninstalling: false })); else error.value = res.data.message || '获取插件列表失败' }
+  try { const res = await axios.get('/api/market/list'); if (res.data.success) items.value = (Array.isArray(res.data.data) ? res.data.data : []).map(normalizeItem).filter(Boolean); else error.value = res.data.message || '获取插件列表失败' }
   catch { error.value = '无法连接插件库, 请检查网络' }
   finally { loading.value = false }
 }
@@ -158,7 +179,7 @@ onMounted(() => { fetchList(); fetchMirror() })
           </div>
         </div>
         <button class="m-btn" @click="refresh" :disabled="loading"><SvgIcon name="refresh" :size="14" /><span>刷新</span></button>
-        <a href="https://github.com/ElainaCore/Elaina-plugins" target="_blank" class="m-btn submit"><SvgIcon name="upload" :size="14" /><span>投稿</span></a>
+        <a href="https://github.com/ElainaCore/Elaina-plugins" target="_blank" rel="noopener noreferrer" class="m-btn submit"><SvgIcon name="upload" :size="14" /><span>投稿</span></a>
       </div>
     </div>
     <div v-if="MARKET_WIP" class="m-wip"><SvgIcon name="alert-circle" :size="15" /><span><b>等待开发：</b>插件市场尚未适配 OneBot 协议，当前插件并不通用，安装功能暂时关闭，敬请期待。</span></div>
@@ -188,7 +209,7 @@ onMounted(() => { fetchList(); fetchMirror() })
             <span v-for="t in filteredTags(item)" :key="t" class="m-tag">{{ t }}</span>
           </div>
           <div class="m-card-foot">
-            <a v-if="item.github" :href="item.github" target="_blank" class="m-link" title="GitHub"><SvgIcon name="globe" :size="14" /><span>仓库</span></a>
+            <a v-if="item.github" :href="item.github" target="_blank" rel="noopener noreferrer" class="m-link" title="GitHub"><SvgIcon name="globe" :size="14" /><span>仓库</span></a>
             <template v-if="!isModule"><span v-if="normType(item) === 'single'" class="m-type-badge" :title="item.alone === false ? '独立文件夹 plugins/' + item.name + '/' : '共享 plugins/alone/'">独立</span><span v-else class="m-type-badge repo">完整</span></template>
             <div class="m-card-btns">
               <button v-if="!isModule && (item.path || item.github)" class="m-btn sm preview" @click="previewItem(item)" :disabled="item._previewing"><SvgIcon name="code" :size="13" /> 预览</button>
@@ -201,7 +222,7 @@ onMounted(() => { fetchList(); fetchMirror() })
       <div v-else class="m-state"><SvgIcon name="search" :size="20" /><span>{{ search || category ? '没有匹配的结果' : '暂无内容' }}</span></div>
     </template>
 
-    <!-- Preview modal -->
+    <!-- 插件预览弹窗 -->
     <div v-if="preview.show" class="m-modal-overlay" @click.self="preview.show = false">
       <div class="m-modal">
         <div class="m-modal-head">

@@ -1,12 +1,16 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMessage, useDialog } from 'naive-ui'
+import {
+  NAlert, NButton, NForm, NFormItem, NInput, NModal, NProgress, NSelect,
+  NSpin, NSwitch, NTag, useDialog, useMessage,
+} from 'naive-ui'
 import { useAppStore } from '../stores/app'
 import { on, off } from '../utils/ws'
 import axios from '../utils/axios'
 import SvgIcon from '../components/SvgIcon.vue'
 import Network from './Network.vue'
+import { safeExternalUrl } from '../utils/url'
 
 const msg = useMessage()
 const dialog = useDialog()
@@ -24,7 +28,7 @@ const qrCodeData = ref('')
 const qrCodeUrl = ref('')
 const qrStatus = ref('waiting')
 const qrRefreshing = ref(false)
-const newBotForm = ref({ bot_id: '', nickname: '' })
+const newBotForm = ref({ bot_id: '', nickname: '', qq_version_key: '', force_quick_login: false })
 const qqStatus = ref(null)
 const qqBusy = ref(false)
 const qqVersionKey = ref('')
@@ -61,9 +65,16 @@ const allBots = computed(() => {
 const qqVersionOptions = computed(() => (qqStatus.value?.available_versions || [])
   .filter(item => item.compatible)
   .map(item => ({
-    label: item.platform + ' ' + item.arch + ' · ' + (item.package || 'package') + ' · ' + item.version,
+    label: (item.label || 'QQ') + ' · ' + item.version + ' · ' + (item.package || 'package') + (item.installed ? ' · 已安装' : ''),
     value: item.key
   })))
+
+const selectedQQVersion = computed(() => (qqStatus.value?.available_versions || [])
+  .find(item => item.key === qqVersionKey.value))
+
+function defaultQQVersionKey() {
+  return qqStatus.value?.recommended?.key || qqVersionOptions.value[0]?.value || ''
+}
 
 function getStatusText(status) {
   const map = {
@@ -94,9 +105,8 @@ function getStatusType(status) {
 function formatMemory(bot) {
   if (!bot?.pid) return '未运行'
   const rss = Number(bot.memory_rss_mb ?? bot.memory_mb ?? 0)
-  const pss = Number(bot.memory_pss_mb ?? 0)
-  if (pss > 0) return `${rss.toFixed(1)} MB RSS / ${pss.toFixed(1)} MB PSS`
-  return `${rss.toFixed(1)} MB RSS`
+  const processes = Math.max(1, Number(bot.memory_processes) || 0)
+  return `${processes} 个进程 · ${rss.toFixed(1)} MB RSS`
 }
 
 async function fetchBots() {
@@ -197,8 +207,9 @@ async function fetchQQStatus(resumeProgress = true) {
     const res = await axios.get('/api/qq/status')
     if (res.data?.success) {
       qqStatus.value = res.data.status || null
-      qqVersionKey.value = qqVersionKey.value || qqStatus.value?.recommended?.key || qqVersionOptions.value[0]?.value || ''
-      const progress = res.data.progress
+      qqVersionKey.value = qqVersionKey.value || defaultQQVersionKey()
+      const jobs = Object.values(res.data.jobs || {})
+      const progress = jobs.find(item => item?.state === 'running') || res.data.progress
       if (progress && progress.state === 'running' && resumeProgress) {
         qqProgress.value = progress
         qqBusy.value = true
@@ -282,7 +293,7 @@ function uninstallQQ() {
   const versionKey = qqVersionKey.value || qqStatus.value?.recommended?.key
   dialog.warning({
     title: '卸载 QQ',
-    content: '将停止内置 QQ，并卸载框架管理的 QQ。系统目录中由其他程序安装的 QQ 不会被强制删除，是否继续？',
+    content: '将停止使用所选版本的机器人，并卸载该版本 QQ。其他版本和系统目录中的 QQ 不会被删除，是否继续？',
     positiveText: '确认卸载',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -315,12 +326,14 @@ async function createEmbeddedBot() {
   try {
     const res = await axios.post('/api/embedded/bots', {
       bot_id: newBotForm.value.bot_id,
-      nickname: newBotForm.value.nickname
+      nickname: newBotForm.value.nickname,
+      qq_version_key: newBotForm.value.qq_version_key || defaultQQVersionKey(),
+      force_quick_login: !!newBotForm.value.force_quick_login
     })
     if (res.data?.success) {
       msg.success('创建成功')
       showAddBot.value = false
-      newBotForm.value = { bot_id: '', nickname: '' }
+      newBotForm.value = { bot_id: '', nickname: '', qq_version_key: defaultQQVersionKey(), force_quick_login: false }
       await fetchEmbeddedStatus()
       await fetchBots()
     } else {
@@ -330,6 +343,37 @@ async function createEmbeddedBot() {
     msg.error(e.response?.data?.error || '创建失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function setBotVersion(bot, versionKey) {
+  if (!versionKey || versionKey === bot.qq_version_key) return
+  try {
+    const res = await axios.post('/api/embedded/version', {
+      bot_id: bot.bot_id,
+      qq_version_key: versionKey
+    })
+    if (!res.data?.success) throw new Error(res.data?.error || '切换 QQ 版本失败')
+    msg.success('QQ 版本已切换')
+    await fetchEmbeddedStatus()
+  } catch (e) {
+    msg.error(e.response?.data?.error || e.message || '切换 QQ 版本失败')
+    await fetchEmbeddedStatus()
+  }
+}
+
+async function setBotQuickLogin(bot, enabled) {
+  try {
+    const res = await axios.post('/api/embedded/quick-login', {
+      bot_id: bot.bot_id,
+      enabled: !!enabled
+    })
+    if (!res.data?.success) throw new Error(res.data?.error || '设置快速登录失败')
+    msg.success(enabled ? '已开启强制快速登录' : '已关闭强制快速登录')
+    await fetchEmbeddedStatus()
+  } catch (e) {
+    msg.error(e.response?.data?.error || e.message || '设置快速登录失败')
+    await fetchEmbeddedStatus()
   }
 }
 
@@ -434,7 +478,7 @@ function openAddDialog() {
 }
 
 function openEmbeddedDialog() {
-  newBotForm.value = { bot_id: '', nickname: '' }
+  newBotForm.value = { bot_id: '', nickname: '', qq_version_key: defaultQQVersionKey(), force_quick_login: false }
   showAddBot.value = true
 }
 
@@ -553,9 +597,9 @@ onUnmounted(() => {
     <div v-if="qqStatus" class="qq-install-panel">
       <div class="qq-install-copy">
         <strong>内置 QQ 运行时</strong>
-        <span v-if="qqStatus.qq_executable">已安装：{{ qqStatus.qq_executable }}</span>
-        <span v-else>未检测到 QQ，可按当前系统一键下载并安装官方 QQNT</span>
-        <span v-if="qqStatus.managed_install" class="qq-managed-state">由框架管理，可卸载和清理</span>
+        <span v-if="selectedQQVersion?.installed">已安装 {{ selectedQQVersion.label }} {{ selectedQQVersion.version }}</span>
+        <span v-else>所选版本尚未安装，可一键下载并安装到框架目录</span>
+        <span v-if="selectedQQVersion?.installed" class="qq-managed-state">新旧版本可并存，每个机器人独立选择</span>
       </div>
       <div class="qq-install-actions">
         <n-select
@@ -577,7 +621,7 @@ onUnmounted(() => {
           <template #icon><SvgIcon name="trash" :size="15" /></template>
           清理安装包
         </n-button>
-        <n-button v-if="qqStatus.qq_executable || qqStatus.managed_install" size="small" tertiary type="error" :loading="qqBusy" @click="uninstallQQ">
+        <n-button v-if="selectedQQVersion?.installed" size="small" tertiary type="error" :loading="qqBusy" @click="uninstallQQ">
           <template #icon><SvgIcon name="close-circle" :size="15" /></template>
           卸载 QQ
         </n-button>
@@ -601,14 +645,6 @@ onUnmounted(() => {
           {{ Math.round((qqProgress.downloaded || 0) / 1024 / 1024) }} MB / {{ Math.round(qqProgress.total / 1024 / 1024) }} MB
         </div>
       </div>
-      <n-alert
-        v-if="qqStatus.headless?.linux_requires_xvfb"
-        type="warning"
-        :bordered="false"
-        class="qq-install-note"
-      >
-        Linux 无显示环境时建议先安装 xvfb，框架会用 xvfb-run 启动无头 QQ。
-      </n-alert>
     </div>
 
     <n-spin :show="loading">
@@ -638,8 +674,28 @@ onUnmounted(() => {
               <span class="meta-value">{{ bot.connection_type || '未知' }}</span>
             </div>
             <div v-if="bot.source === 'embedded'" class="meta-item">
-              <span class="meta-label">进程内存</span>
-              <span class="meta-value">{{ formatMemory(bot) }}<small v-if="bot.memory_processes"> · {{ bot.memory_processes }} 个进程</small></span>
+              <span class="meta-label">QQ 客户端</span>
+              <n-select
+                :value="bot.qq_version_key"
+                :options="qqVersionOptions"
+                size="small"
+                class="bot-version-select"
+                :disabled="!!bot.pid"
+                @update:value="value => setBotVersion(bot, value)"
+              />
+            </div>
+            <div v-if="bot.source === 'embedded'" class="meta-item">
+              <span class="meta-label">QQ 内存</span>
+              <span class="meta-value">{{ formatMemory(bot) }}</span>
+            </div>
+            <div v-if="bot.source === 'embedded'" class="meta-item">
+              <span class="meta-label">强制快速登录</span>
+              <n-switch
+                size="small"
+                :value="!!bot.force_quick_login"
+                :disabled="!!bot.pid"
+                @update:value="value => setBotQuickLogin(bot, value)"
+              />
             </div>
             <div v-if="bot.source === 'embedded' && bot.error" class="meta-item error">
               <span class="meta-label">错误</span>
@@ -733,9 +789,19 @@ onUnmounted(() => {
             placeholder="可选，方便识别"
           />
         </n-form-item>
+        <n-form-item label="QQ 版本" required>
+          <n-select
+            v-model:value="newBotForm.qq_version_key"
+            :options="qqVersionOptions"
+            placeholder="选择该机器人使用的 QQ 版本"
+          />
+        </n-form-item>
+        <n-form-item label="快速登录">
+          <n-switch v-model:value="newBotForm.force_quick_login" />
+        </n-form-item>
       </n-form>
       <n-alert type="info" :bordered="false" style="margin-top: 12px">
-        创建后启动即可扫码登录。框架会自动探测本机 QQ，也可通过 <code>embedded_qq.qq_path</code> 指定路径。
+        新旧 QQ 会安装到独立目录。机器人停止后可切换版本，登录会话不会因此删除。
       </n-alert>
     </n-modal>
 
@@ -765,7 +831,7 @@ onUnmounted(() => {
             <img :src="qrImageSrc" alt="QR Code" class="qr-code" />
           </div>
           <div v-if="qrCodeUrl" class="qr-url-fallback">
-            <a :href="qrCodeUrl" target="_blank" rel="noreferrer">打开二维码链接</a>
+            <a v-if="safeExternalUrl(qrCodeUrl)" :href="safeExternalUrl(qrCodeUrl)" target="_blank" rel="noopener noreferrer">打开二维码链接</a>
             <n-button text size="small" @click="copyQrCodeUrl">复制链接</n-button>
           </div>
           <div v-if="!qrCodeData" class="qr-loading">
@@ -816,387 +882,4 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-.bots-page {
-  width: 100%;
-}
-
-.access-switcher {
-  display: flex;
-  gap: 4px;
-  width: fit-content;
-  margin-bottom: 18px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg2);
-}
-
-.access-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 7px 13px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text2);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.access-tab:hover { color: var(--text); background: var(--bg3); }
-.access-tab.active { color: var(--accent); background: var(--accent-soft); }
-.access-count {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  background: var(--bg3);
-  color: var(--text3);
-  font-size: 10px;
-  text-align: center;
-}
-
-.qq-install-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  margin-bottom: 20px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg2);
-}
-
-.qq-install-copy {
-  display: flex;
-  flex: 1 1 320px;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  color: var(--text2);
-  font-size: 12px;
-}
-
-.qq-install-copy strong {
-  color: var(--text);
-  font-size: 14px;
-}
-
-.qq-managed-state {
-  color: var(--success);
-  font-size: 11px;
-}
-
-.qq-install-actions {
-  display: flex;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.qq-install-note {
-  flex: 1 0 100%;
-}
-.qq-progress {
-  flex: 1 0 100%;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg3);
-}
-.qq-progress-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 7px;
-  color: var(--text2);
-  font-size: 12px;
-}
-.qq-progress-head span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.qq-progress-head span:last-child {
-  flex-shrink: 0;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.qq-progress-meta {
-  margin-top: 6px;
-  color: var(--text3);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.access-method-modal { width: min(520px, 94vw); }
-.access-methods { display: grid; gap: 10px; }
-.access-method {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  width: 100%;
-  padding: 15px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg2);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .15s, background .15s, transform .15s;
-}
-.access-method:hover { border-color: var(--accent); background: var(--accent-soft); transform: translateY(-1px); }
-.access-method-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 9px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  flex-shrink: 0;
-}
-.access-method-copy { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
-.access-method-copy strong { font-size: 14px; }
-.access-method-copy small { color: var(--text3); font-size: 12px; line-height: 1.45; }
-
-.bots-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.empty-state {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 80px 20px;
-  color: var(--text3);
-}
-
-.empty-state p {
-  margin: 16px 0 24px;
-  font-size: 14px;
-}
-
-.bot-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s;
-}
-
-.bot-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--accent);
-}
-
-.bot-header {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.bot-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  background: var(--bg3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.bot-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.bot-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.bot-name {
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bot-qq {
-  color: var(--text3);
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-
-.bot-meta {
-  margin-bottom: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.meta-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 0;
-  font-size: 13px;
-}
-
-.meta-label {
-  color: var(--text3);
-}
-
-.meta-value {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.meta-item.error .meta-value {
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.bot-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.bot-actions button {
-  flex: 1;
-}
-
-/* QR 码对话框 */
-.qr-dialog {
-  min-height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.qr-loading {
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.qr-loading p {
-  margin-top: 16px;
-  color: var(--text2);
-  font-size: 14px;
-}
-
-.qr-content {
-  width: 100%;
-  text-align: center;
-}
-
-.qr-code-wrapper {
-  display: inline-block;
-  padding: 20px;
-  background: white;
-  border-radius: 12px;
-  margin-bottom: 20px;
-}
-
-.qr-code {
-  width: 240px;
-  height: 240px;
-  display: block;
-}
-
-.qr-url-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin: -8px 0 16px;
-  font-size: 12px;
-}
-
-.qr-url-fallback a {
-  max-width: 280px;
-  color: var(--primary);
-  word-break: break-all;
-}
-
-.qr-tips {
-  text-align: left;
-}
-
-.qr-bot-info {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--bg3);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text2);
-}
-
-.qr-bot-info p {
-  margin: 4px 0;
-}
-
-.qr-success,
-.qr-error {
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.success-icon,
-.error-icon {
-  margin-bottom: 16px;
-}
-
-.success-text,
-.error-text {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 8px;
-}
-
-.success-qq,
-.error-detail {
-  font-size: 14px;
-  color: var(--text2);
-  margin: 0;
-}
-
-.error-detail {
-  color: var(--danger);
-  margin-bottom: 20px;
-}
-
-@media (max-width: 768px) {
-  .bots-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .access-switcher { width: 100%; }
-  .access-tab { flex: 1; justify-content: center; }
-  .qq-install-actions { width: 100%; }
-  .qq-install-actions .n-select { flex: 1; min-width: 0 !important; }
-  .qq-install-actions .n-button { flex: 1; }
-
-  .qr-code {
-    width: 200px;
-    height: 200px;
-  }
-}
-</style>
+<style scoped src="../styles/Bots.css"></style>

@@ -79,8 +79,8 @@ function darkVariant(t) {
 }
 
 export const useThemeStore = defineStore('theme', () => {
-  const themeName = ref(localStorage.getItem('elaina_theme') || 'discord')
-  const darkMode = ref(localStorage.getItem('elaina_dark') === '1')
+  const themeName = ref(localStorage.getItem('elainaqq_theme') || 'discord')
+  const darkMode = ref(localStorage.getItem('elainaqq_dark') === '1')
   const theme = computed(() => {
     const t = THEMES[themeName.value] || THEMES.discord
     return darkMode.value ? darkVariant(t) : t
@@ -88,7 +88,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   function setTheme(name) {
     themeName.value = name
-    localStorage.setItem('elaina_theme', name)
+    localStorage.setItem('elainaqq_theme', name)
     applyCSS(theme.value)
   }
 
@@ -96,7 +96,7 @@ export const useThemeStore = defineStore('theme', () => {
   function toggleDark(event) {
     const apply = () => {
       darkMode.value = !darkMode.value
-      localStorage.setItem('elaina_dark', darkMode.value ? '1' : '0')
+      localStorage.setItem('elainaqq_dark', darkMode.value ? '1' : '0')
       applyCSS(theme.value)
     }
     if (activeVT) {

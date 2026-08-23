@@ -1,0 +1,264 @@
+/* ===== Config Tree (unscoped for ConfigNode child component) ===== */
+.cfg-section {
+  display:flex;
+  flex-direction:column;
+  gap:2px
+}
+.cfg-group {
+  margin-bottom:4px
+}
+.cfg-group-title {
+  font-size:13px;
+  font-weight:600;
+  color:var(--accent);
+  cursor:pointer;
+  padding:6px 0 4px;
+  -webkit-user-select:none;
+  -moz-user-select:none;
+  user-select:none;
+  list-style:none;
+  display:flex;
+  align-items:center;
+  gap:4px
+}
+.cfg-group-title:before {
+  content:"▶";
+  font-size:9px;
+  transition:.15s
+}
+details[open]>.cfg-group-title:before {
+  transform:rotate(90deg)
+}
+.cfg-group>.cfg-section {
+  padding-left:16px;
+  margin-left:4px
+}
+.cfg-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:4px 0;
+  min-height:32px
+}
+.cfg-key {
+  font-size:12px;
+  color:var(--text2);
+  font-family:Cascadia Code,Fira Code,monospace;
+  min-width:140px;
+  flex-shrink:0
+}
+.cfg-comment {
+  font-size:10px;
+  color:var(--text3);
+  opacity:.5;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  flex-shrink:1;
+  min-width:0
+}
+.cfg-group-title .cfg-comment {
+  font-size:10px;
+  font-weight:400;
+  margin-left:6px
+}
+.cfg-val.null {
+  font-size:12px;
+  color:var(--text3);
+  font-style:italic
+}
+.cfg-input {
+  flex:1;
+  max-width:400px;
+  padding:4px 8px;
+  font-size:12px;
+  background:var(--bg2);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-radius:4px;
+  outline:none;
+  font-family:Cascadia Code,Fira Code,monospace
+}
+.cfg-input:focus {
+  border-color:var(--accent)
+}
+.cfg-input.num {
+  max-width:160px
+}
+.cfg-toggle {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  cursor:pointer
+}
+.cfg-toggle input {
+  display:none
+}
+.cfg-toggle-slider {
+  position:relative;
+  width:32px;
+  height:18px;
+  background:var(--border);
+  border-radius:9px;
+  transition:.2s
+}
+.cfg-toggle-slider:after {
+  content:"";
+  position:absolute;
+  left:2px;
+  top:2px;
+  width:14px;
+  height:14px;
+  background:#fff;
+  border-radius:50%;
+  transition:.2s
+}
+.cfg-toggle input:checked+.cfg-toggle-slider {
+  background:var(--accent)
+}
+.cfg-toggle input:checked+.cfg-toggle-slider:after {
+  left:16px
+}
+.cfg-toggle-label {
+  font-size:11px;
+  color:var(--text3);
+  font-family:monospace
+}
+.cfg-array-item {
+  display:flex;
+  align-items:center;
+  gap:6px
+}
+.cfg-idx {
+  font-size:10px;
+  color:var(--text3);
+  min-width:28px;
+  font-family:monospace
+}
+.cfg-arr-btn {
+  border:1px solid var(--border);
+  border-radius:4px;
+  background:transparent;
+  cursor:pointer;
+  font-size:11px;
+  padding:2px 8px;
+  color:var(--text2);
+  transition:.15s
+}
+.cfg-arr-btn:hover {
+  border-color:var(--accent);
+  color:var(--accent)
+}
+.cfg-arr-btn.remove {
+  padding:2px 6px;
+  color:var(--text3);
+  flex-shrink:0
+}
+.cfg-arr-btn.remove:hover {
+  color:#e74c3c;
+  border-color:#e74c3c
+}
+.cfg-arr-btn.add {
+  margin-top:4px;
+  align-self:flex-start
+}
+@media(max-width:767px) {
+  .cfg-row {
+  flex-wrap:wrap;
+  gap:4px
+}
+.cfg-key {
+  min-width:80px;
+  max-width:none;
+  width:100%;
+  font-size:11px
+}
+.cfg-input {
+  max-width:none;
+  width:100%
+}
+.cfg-input.num {
+  max-width:none
+}
+.cfg-comment {
+  width:100%;
+  white-space:normal
+}
+.cfg-group>.cfg-section {
+  padding-left:10px
+}
+.cfg-array-item {
+  flex-wrap:wrap
+}
+}
+.uninstall-tag {
+  color:#ff453a !important;
+  border-color:#ff453a4d !important;
+  cursor:pointer
+}
+.uninstall-tag:hover {
+  border-color:#ff453a !important;
+  background:#ff453a1a
+}
+.p-uninstall-confirm {
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:20px 24px;
+  width:340px;
+  max-width:90vw
+}
+.p-uninstall-title {
+  font-size:15px;
+  font-weight:600;
+  color:var(--text);
+  margin-bottom:8px
+}
+.p-uninstall-msg {
+  font-size:13px;
+  color:var(--text2);
+  margin-bottom:14px;
+  line-height:1.5
+}
+.p-uninstall-check {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--text2);
+  margin-bottom:16px;
+  cursor:pointer
+}
+.p-uninstall-check input[type="checkbox"] {
+  width:15px;
+  height:15px;
+  accent-color:var(--accent)
+}
+.p-uninstall-btns {
+  display:flex;
+  justify-content:flex-end;
+  gap:8px
+}
+.p-btn.danger {
+  color:#fff;
+  background:#ff453a;
+  border-color:#ff453a
+}
+.p-btn.danger:hover {
+  background:#e03e34
+}
+.p-btn.danger:disabled {
+  opacity:.5;
+  cursor:default
+}
+.p-file-meta {
+  font-size:11px;
+  color:var(--text3);
+  margin-left:4px
+}
+.p-act-btn.danger-btn {
+  color:#ff453a
+}
+.p-act-btn.danger-btn:hover {
+  background:#ff453a1a
+}

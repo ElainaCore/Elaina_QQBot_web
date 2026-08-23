@@ -1,14 +1,14 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { NEmpty } from 'naive-ui'
 import axios from '../utils/axios'
 
 const route = useRoute()
 const iframeSrc = computed(() => {
   const key = route.params.key
   if (!key) return ''
-  const token = localStorage.getItem('elaina_token') || ''
-  return `${axios.defaults.baseURL}/api/web-pages/${key}?token=${token}`
+  return `${axios.defaults.baseURL}/api/web-pages/${key}`
 })
 </script>
 

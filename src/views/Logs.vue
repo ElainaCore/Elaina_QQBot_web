@@ -69,18 +69,47 @@ const currentLogs = computed(() =>
   : errors.value
 )
 
-function pushLog(type, entry) {
+const pendingLogs = []
+let flushTimer = 0
+let scrollFrame = 0
+
+function appendLogs(type, entries) {
   const arr = type === 'message' ? messages : type === 'framework' ? framework : type === 'console' ? consoles : (type === 'lifecycle' || type === 'event') ? lifecycle : errors
-  arr.value.push(entry)
-  if (arr.value.length > MAX) arr.value.splice(0, arr.value.length - MAX)
+  arr.value = [...arr.value, ...entries].slice(-MAX)
 }
-function onNewLog(data) { if (!data) return; const t = data.log_type || 'message'; const e = { ...data }; delete e.log_type; pushLog(t, e); if (t === 'framework' || t === 'error') pushLog('console', e) }
+function flushLogs() {
+  flushTimer = 0
+  if (!pendingLogs.length) return
+  const grouped = new Map()
+  for (const [type, entry] of pendingLogs.splice(0)) {
+    if (!grouped.has(type)) grouped.set(type, [])
+    grouped.get(type).push(entry)
+    if (type === 'framework' || type === 'error') {
+      if (!grouped.has('console')) grouped.set('console', [])
+      grouped.get('console').push(entry)
+    }
+  }
+  for (const [type, entries] of grouped) appendLogs(type, entries)
+}
+function queueLog(type, entry) {
+  pendingLogs.push([type, entry])
+  if (!flushTimer) flushTimer = window.setTimeout(flushLogs, 50)
+}
+function onNewLog(data) {
+  if (!data) return
+  const eventBot = String(data.bot_qq || '')
+  if (app.currentBotId && eventBot && eventBot !== String(app.currentBotId)) return
+  const t = data.log_type || 'message'
+  const e = { ...data }
+  delete e.log_type
+  queueLog(t, e)
+}
 function onInit() { if (!messages.value.length) fetchLogs() }
-function clearAll() { messages.value = []; framework.value = []; errors.value = []; lifecycle.value = []; logins.value = []; consoles.value = []; expandedRaw.value = {}; expandedErr.value = {}; expandedMsg.value = {} }
+function clearAll() { pendingLogs.length = 0; messages.value = []; framework.value = []; errors.value = []; lifecycle.value = []; logins.value = []; consoles.value = []; expandedRaw.value = {}; expandedErr.value = {}; expandedMsg.value = {} }
 
 async function fetchLogs() {
   try {
-    const res = await axios.get('/api/logs/recent')
+    const res = await axios.get('/api/logs/recent', { params: { bot_qq: app.currentBotId || '' } })
     messages.value = normalizeLogs(res.data.message)
     framework.value = normalizeLogs(res.data.framework)
     errors.value = normalizeLogs(res.data.error)
@@ -96,12 +125,22 @@ async function fetchLoginLogs() {
   } catch {}
 }
 
-watch(currentLogs, async () => {
-  if (autoScroll.value) { await nextTick(); const el = logContainer.value; if (el) el.scrollTop = el.scrollHeight }
-}, { deep: true })
+function scheduleScroll() {
+  if (!autoScroll.value) return
+  if (scrollFrame) cancelAnimationFrame(scrollFrame)
+  nextTick(() => {
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0
+      const el = logContainer.value
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  })
+}
+watch([tab, () => currentLogs.value.length, autoScroll], scheduleScroll)
 
 onMounted(() => { fetchLogs(); on('new_log', onNewLog); on('init', onInit) })
-onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
+onUnmounted(() => { off('new_log', onNewLog); off('init', onInit); if (flushTimer) clearTimeout(flushTimer); if (scrollFrame) cancelAnimationFrame(scrollFrame); pendingLogs.length = 0 })
+watch(() => app.currentBotId, () => fetchLogs())
 </script>
 
 <template>
@@ -121,10 +160,11 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
     <div class="terminal" ref="logContainer">
       <div v-if="!currentLogs.length" class="term-empty">等待日志...</div>
       <div v-for="(e, i) in currentLogs" :key="i" class="term-line">
-        <!-- message -->
+        <!-- 消息日志 -->
         <template v-if="tab === 'message'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span v-if="e.bot_name" class="t-bot">[{{ e.bot_name }}]</span>
+          <span v-if="e.bot_qq" class="t-bot-qq">QQ:{{ e.bot_qq }}</span>
           <span v-if="e.direction === 'send'" class="t-dir t-dir-send">发送</span>
           <span v-else-if="e.direction === 'receive'" class="t-dir t-dir-recv">接收</span>
           <span v-if="e.user_id" class="t-uid">U:{{ e.user_id }}</span>
@@ -133,21 +173,21 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
           <span v-if="e.raw_message" :class="['t-expand-btn', { active: expandedMsg[i] }]" @click="toggleMsg(i)">原始事件</span>
           <div v-if="expandedMsg[i] && e.raw_message" class="t-detail"><pre class="t-traceback">{{ fmtJson(e.raw_message) }}</pre></div>
         </template>
-        <!-- framework -->
+        <!-- 框架日志 -->
         <template v-else-if="tab === 'framework'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span :class="['t-level', (e.level || 'INFO').toLowerCase()]">{{ e.level || 'INFO' }}</span>
           <span v-if="e.source" class="t-source">[{{ e.source }}]</span>
           <span class="t-content">{{ e.content || e.message || '' }}</span>
         </template>
-        <!-- console -->
+        <!-- 控制台日志 -->
         <template v-else-if="tab === 'console'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span :class="['t-level', consoleLevel(e).toLowerCase()]">{{ consoleLevel(e) }}</span>
           <span v-if="e.source" class="t-source">[{{ e.source }}]</span>
           <span class="t-content">{{ e.content || e.message || '' }}</span>
         </template>
-        <!-- lifecycle -->
+        <!-- 生命周期日志 -->
         <template v-else-if="tab === 'lifecycle'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span v-if="e.bot_qq" class="t-bot">[{{ e.bot_qq }}]</span>
@@ -157,7 +197,7 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
           <span v-if="e.raw_message || e.content" :class="['t-expand-btn', { active: expandedRaw[i] }]" @click="expandedRaw[i] = !expandedRaw[i]">原始响应</span>
           <div v-if="expandedRaw[i] && (e.raw_message || e.content)" class="t-detail"><pre class="t-traceback">{{ fmtJson(e.raw_message || e.content) }}</pre></div>
         </template>
-        <!-- login -->
+        <!-- 登录日志 -->
         <template v-else-if="tab === 'login'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span class="t-login-ip">{{ e.ip }}</span>
@@ -165,7 +205,7 @@ onUnmounted(() => { off('new_log', onNewLog); off('init', onInit) })
           <span v-if="e.fail_count" class="t-login-fail">失败 {{ e.fail_count }} 次</span>
           <span v-if="e.first_access" class="t-login-first">首次: {{ e.first_access.replace('T',' ').slice(0,19) }}</span>
         </template>
-        <!-- error -->
+        <!-- 错误日志 -->
         <template v-else>
           <span class="t-time">{{ e.timestamp }}</span>
           <span class="t-level error">ERROR</span>

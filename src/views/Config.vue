@@ -17,7 +17,7 @@ function dump(obj) { try { return yaml.dump(obj, { lineWidth: -1, noRefs: true, 
 
 const settings = computed(() => parse(raw.settings))
 
-// Settings helpers
+// 设置辅助函数
 function updateSetting(section, key, event) {
   const d = parse(raw.settings)
   if (!d[section]) d[section] = {}
@@ -46,7 +46,7 @@ function updateSettingList(section, key, event) {
   raw.settings = dump(d); dirty.value = true
 }
 
-// API
+// 接口调用
 async function fetchConfig() {
   loading.value = true
   try {
@@ -100,21 +100,17 @@ onMounted(fetchConfig)
           <div class="vis-grid">
             <div class="vis-field full"><label>主人 QQ 号</label><input :value="(settings.owner?.ids || []).join(',')" @input="updateSettingList('owner', 'ids', $event)" placeholder="多个用逗号分隔" /></div>
           </div>
-          <div class="vis-field full" style="font-size:12px;color:var(--text-secondary);margin-top:14px">OneBot 网络连接请在「机器人 → 网络接入」中管理，每条连接可单独配置 Token/Secret</div>
           <div class="vis-card-title" style="margin-top:14px">内置 QQ</div>
           <div class="vis-grid">
             <div class="vis-field full"><label>启用内置 QQ</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.enabled !== false" @change="updateSettingBool('embedded_qq', 'enabled', $event)" /><span /></label></div>
             <div class="vis-field"><label>QQ 可执行文件</label><input :value="settings.embedded_qq?.qq_path || ''" @input="updateSetting('embedded_qq', 'qq_path', $event)" placeholder="留空自动探测或从机器人页面安装" /></div>
             <div class="vis-field"><label>账号数据目录</label><input :value="settings.embedded_qq?.data_dir || 'data/qq'" @input="updateSetting('embedded_qq', 'data_dir', $event)" /></div>
-            <div class="vis-field"><label>Worker 起始端口</label><input type="number" :value="settings.embedded_qq?.worker_port || 5020" @input="updateSettingNum('embedded_qq', 'worker_port', $event)" /></div>
             <div class="vis-field"><label>无头运行</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.headless !== false" @change="updateSettingBool('embedded_qq', 'headless', $event)" /><span /></label></div>
-            <div class="vis-field"><label>Linux 使用 Xvfb</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.linux_use_xvfb !== false" @change="updateSettingBool('embedded_qq', 'linux_use_xvfb', $event)" /><span /></label></div>
-            <div class="vis-field full" style="font-size:12px;color:var(--text-secondary)">每个 QQ 使用独立账号数据目录和 worker 进程，共享同一份 QQ 安装文件，不会重复安装。</div>
           </div>
           <div class="vis-card-title" style="margin-top:14px">Web 面板</div>
           <div class="vis-grid">
             <div class="vis-field"><label>管理密码</label><input :value="settings.web?.admin_password || ''" @input="updateSetting('web', 'admin_password', $event)" type="password" /></div>
-            <div class="vis-field"><label>框架名称</label><input :value="settings.web?.framework_name || 'Elaina-QQ'" @input="updateSetting('web', 'framework_name', $event)" /></div>
+            <div class="vis-field"><label>框架名称</label><input :value="settings.web?.framework_name || 'ElainaQQ'" @input="updateSetting('web', 'framework_name', $event)" /></div>
             <div class="vis-field"><label>图标 URL</label><input :value="settings.web?.favicon_url || ''" @input="updateSetting('web', 'favicon_url', $event)" /></div>
             <div class="vis-field"><label>PC 标题后缀</label><input :value="settings.web?.pc_title_suffix || ''" @input="updateSetting('web', 'pc_title_suffix', $event)" /></div>
             <div class="vis-field"><label>登录标题后缀</label><input :value="settings.web?.login_title_suffix || ''" @input="updateSetting('web', 'login_title_suffix', $event)" /></div>
@@ -136,7 +132,7 @@ onMounted(fetchConfig)
       </div>
     </template>
 
-    <!-- YAML mode -->
+    <!-- YAML 编辑模式 -->
     <div v-else class="config-body">
       <div class="editor-wrap">
         <div class="editor-hint">

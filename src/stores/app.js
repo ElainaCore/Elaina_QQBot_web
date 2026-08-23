@@ -18,10 +18,17 @@ export const useAppStore = defineStore('app', () => {
     try {
       const res = await axios.get('/api/bots')
       bots.value = res.data.bots || []
+      if (currentBotId.value && !bots.value.some(bot => bot.bot_qq === currentBotId.value)) {
+        const renamed = bots.value.find(bot => bot.bot_id === currentBotId.value)
+        if (renamed) switchBot(renamed.bot_qq)
+      }
       if (bots.value.length === 1 && !currentBotId.value) {
         switchBot(bots.value[0].bot_qq)
       }
-    } catch {}
+    } catch {
+    } finally {
+      _botsPromise = null
+    }
   }
   // 首次加载去重，避免多个视图同时请求机器人列表。
   function ensureBots() {
@@ -31,14 +38,16 @@ export const useAppStore = defineStore('app', () => {
 
   function switchBot(bot_qq) {
     currentBotId.value = bot_qq
-    localStorage.setItem('elaina_bot', bot_qq)
+    localStorage.setItem('elainaqq_bot', bot_qq)
   }
 
   async function fetchSystemInfo() {
     try {
       const res = await axios.get('/api/system/info')
       systemInfo.value = res.data
+      return res.data
     } catch {}
+    return null
   }
 
   async function fetchWebPages() {
