@@ -102,10 +102,10 @@ onMounted(fetchConfig)
           </div>
           <div class="vis-card-title" style="margin-top:14px">内置 QQ</div>
           <div class="vis-grid">
-            <div class="vis-field full"><label>启用内置 QQ</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.enabled !== false" @change="updateSettingBool('embedded_qq', 'enabled', $event)" /><span /></label></div>
+            <div class="vis-field"><label>启用内置 QQ</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.enabled !== false" @change="updateSettingBool('embedded_qq', 'enabled', $event)" /><span /></label></div>
+            <div class="vis-field"><label>无头运行</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.headless !== false" @change="updateSettingBool('embedded_qq', 'headless', $event)" /><span /></label></div>
             <div class="vis-field"><label>QQ 可执行文件</label><input :value="settings.embedded_qq?.qq_path || ''" @input="updateSetting('embedded_qq', 'qq_path', $event)" placeholder="留空自动探测或从机器人页面安装" /></div>
             <div class="vis-field"><label>账号数据目录</label><input :value="settings.embedded_qq?.data_dir || 'data/qq'" @input="updateSetting('embedded_qq', 'data_dir', $event)" /></div>
-            <div class="vis-field"><label>无头运行</label><label class="vis-switch"><input type="checkbox" :checked="settings.embedded_qq?.headless !== false" @change="updateSettingBool('embedded_qq', 'headless', $event)" /><span /></label></div>
           </div>
           <div class="vis-card-title" style="margin-top:14px">Web 面板</div>
           <div class="vis-grid">

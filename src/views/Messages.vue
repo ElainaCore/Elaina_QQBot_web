@@ -11,12 +11,15 @@ import { openExternalUrl, safeMediaUrl } from '../utils/url'
 const app = useAppStore()
 let _unmounted = false
 const nickCache = {}
-const CHAT_LIMIT = 100
+const CHAT_PAGE_SIZE = 200
 const isMobile = ref(window.innerWidth < 768)
 const mobileView = ref('list')
 const chatType = ref('group')
 const chatSearch = ref('')
 const chats = ref([])
+const chatTotal = ref(0)
+const chatPage = ref(1)
+const chatsLoading = ref(false)
 const current = ref(null)
 const history = ref([])
 const historyRef = ref(null)
@@ -152,16 +155,38 @@ async function recallMsg(m) {
   }
 }
 let _fetchTimer = null
-async function fetchChats() {
+let _fetchChatRequest = 0
+async function fetchChats({ append = false } = {}) {
   if (_unmounted) return
+  if (append && (chatsLoading.value || chats.value.length >= chatTotal.value)) return
+  const requestId = ++_fetchChatRequest
+  const page = append ? chatPage.value + 1 : 1
+  chatsLoading.value = true
   try {
     const res = await axios.post('/api/message/chats', {
       type: chatType.value, search: chatSearch.value,
-      bot_qq: app.currentBotId || '', page: 1, page_size: CHAT_LIMIT,
+      bot_qq: app.currentBotId || '', page, page_size: CHAT_PAGE_SIZE,
     })
-    if (_unmounted) return
-    chats.value = res.data?.data?.chats || []
-  } catch { if (!_unmounted) chats.value = [] }
+    if (_unmounted || requestId !== _fetchChatRequest) return
+    const data = res.data?.data || {}
+    const batch = Array.isArray(data.chats) ? data.chats : []
+    if (append) {
+      const known = new Set(chats.value.map(chatKey))
+      chats.value = [...chats.value, ...batch.filter(chat => !known.has(chatKey(chat)))]
+    } else {
+      chats.value = batch
+    }
+    chatPage.value = page
+    chatTotal.value = Number(data.total || chats.value.length)
+  } catch {
+    if (!_unmounted && requestId === _fetchChatRequest && !append) { chats.value = []; chatTotal.value = 0 }
+  } finally {
+    if (!_unmounted && requestId === _fetchChatRequest) chatsLoading.value = false
+  }
+}
+function onChatListScroll(e) {
+  const el = e.currentTarget
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) fetchChats({ append: true })
 }
 
 function memberInfo(uid) { return groupRoles.value[uid] || {} }
@@ -424,7 +449,7 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
           </n-radio-group>
         </div>
         <n-input v-model:value="chatSearch" placeholder="搜索..." size="small" clearable class="chat-search" />
-        <div class="chat-items">
+        <div class="chat-items" @scroll.passive="onChatListScroll">
           <div v-for="c in chats" :key="chatKey(c)" :class="['chat-item', { active: current && chatKey(current) === chatKey(c) }]" @click="selectChat(c)">
             <div class="chat-avatar-wrap">
               <img v-if="chatType === 'user' && c.chat_id" class="chat-avatar" :src="qqAvatar(c.chat_id)" loading="lazy" @error="e => e.target.style.display='none'" />
@@ -444,7 +469,9 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
               <button v-if="chatType !== 'user'" class="remark-btn" title="备注" @click.stop="startRemark(c)">✎</button>
             </div>
           </div>
-          <div v-if="!chats.length" class="chat-empty">暂无聊天</div>
+          <div v-if="chatsLoading && !chats.length" class="chat-empty">加载中...</div>
+          <div v-else-if="!chats.length" class="chat-empty">暂无聊天</div>
+          <div v-else-if="chatsLoading" class="chat-empty">加载中...</div>
         </div>
       </div>
 
@@ -483,7 +510,6 @@ onUnmounted(() => { _unmounted = true; off('new_log', onNewLog); window.removeEv
               <div class="bubble-main">
                 <div class="bubble-name">
                   {{ m.nickname }}
-                  <span v-if="m.bot_qq" class="bubble-bot-tag">QQ:{{ m.bot_qq }}</span>
                   <span v-if="m.source === 'web_panel'" class="bubble-src-tag">Web</span>
                   <span v-if="msgRole(m) && !m.is_self && apiChatType === 'group'" :class="['bubble-role-tag', roleClass(msgRole(m))]">{{ roleLabel(msgRole(m)) }}</span>
                   <span v-if="isBot(m.user_id) && !m.is_self && apiChatType === 'group'" class="bubble-role-tag role-bot">Bot</span>
