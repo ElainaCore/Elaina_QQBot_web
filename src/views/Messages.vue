@@ -284,7 +284,7 @@ async function selectChat(chat) {
   if (isMobile.value) mobileView.value = 'chat'
   history.value = []
   try {
-    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: chat.chat_id, bot_qq: app.currentBotId || chat.bot_qq || '' })
+    const res = await axios.post('/api/message/history', { chat_type: apiChatType.value, chat_id: chat.chat_id, bot_qq: app.currentBotId || chat.bot_qq || '', count: 50 })
     if (myId !== _selectId) return
     const msgs = res.data?.data?.messages || []
     for (const m of msgs) prepareMessage(m)

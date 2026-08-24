@@ -11,6 +11,38 @@ const TABS = [
   { key: 'framework', label: '框架' }, { key: 'error', label: '错误' },
   { key: 'login', label: '登录日志' },
 ]
+const EVENT_LABELS = {
+  group_add: '机器人入群', group_del: '机器人退群',
+  group_member_add: '群成员增加', group_member_del: '群成员减少', group_member_info: '群成员信息更新',
+  group_join_request: '加群申请', group_upload: '群文件上传', group_admin: '群管理员变动',
+  group_decrease: '群成员减少', group_increase: '群成员增加', group_ban: '群禁言变动',
+  friend_add: '好友新增', friend_del: '好友删除', group_recall: '群消息撤回', friend_recall: '好友消息撤回',
+  notify: '群内提醒', group_card: '群名片变更', offline_file: '离线文件',
+  online_file_receive: '接收在线文件', online_file_send: '发送在线文件', client_status: '客户端状态变更',
+  essence: '精华消息变更', group_name: '群名称变更', group_msg_emoji_like: '消息表情回应',
+  group_gray_tip: '群灰色提示', friend_poke: '好友戳一戳', poke: '戳一戳', lucky_king: '红包运气王',
+  honor: '群荣誉变更', title: '群头衔变更', group_msg_reject: '关闭主动消息',
+  group_msg_receive: '开启主动消息', subscribe_status: '订阅开启', subscribe_close: '订阅关闭',
+  message_reaction_add: '添加消息表态', message_reaction_remove: '取消消息表态', guild_update: '频道更新',
+  bot_online: '机器人上线', bot_offline: '机器人离线', robot_online: '机器人上线', robot_offline: '机器人离线',
+  elaina_red_packet: '红包事件', 'request.friend': '好友申请', 'request.group': '加群申请',
+  'meta_event.lifecycle': '连接生命周期', 'meta_event.heartbeat': '连接心跳', lifecycle: '连接生命周期', heartbeat: '连接心跳',
+}
+const EVENT_SUBTYPE_LABELS = {
+  'notify.poke': '戳一戳', 'notify.lucky_king': '红包运气王', 'notify.honor': '群荣誉变更',
+  'notify.title': '群头衔变更', 'notify.group_name': '群名称变更', 'notify.input_status': '输入状态变更',
+  'notify.profile_like': '个人资料获赞', 'notify.gray_tip': '群灰色提示',
+  'group_ban.ban': '群成员禁言', 'group_ban.lift_ban': '解除群成员禁言',
+  'group_increase.approve': '同意入群', 'group_increase.invite': '邀请入群',
+  'group_decrease.leave': '群成员退群', 'group_decrease.kick': '群成员被移出', 'group_decrease.kick_me': '机器人被移出群',
+  'group_admin.set': '设置群管理员', 'group_admin.unset': '取消群管理员',
+  'essence.add': '设为精华消息', 'essence.delete': '移出精华消息',
+  'client_status.online': '客户端上线', 'client_status.offline': '客户端离线',
+  'online_file_receive.cancel': '取消接收在线文件', 'online_file_send.receive': '在线文件已接收',
+  'online_file_send.refuse': '在线文件被拒收', 'request.group.add': '加群申请', 'request.group.invite': '群邀请',
+  'meta_event.lifecycle.enable': 'OneBot 已启用', 'meta_event.lifecycle.disable': 'OneBot 已停用',
+  'meta_event.lifecycle.connect': 'OneBot 已连接',
+}
 const tab = ref('message')
 const autoScroll = ref(true)
 const messages = ref([]), framework = ref([]), errors = ref([]), lifecycle = ref([]), logins = ref([])
@@ -40,6 +72,16 @@ function toggleErr(i, type) { expandedErr.value[i] = expandedErr.value[i] === ty
 function fmtJson(s) { if (!s) return ''; try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s } }
 function fmtCtx(v) { if (!v) return '无'; if (typeof v === 'string') try { return JSON.stringify(JSON.parse(v), null, 2) } catch { return v } return JSON.stringify(v, null, 2) }
 function normalizeLogs(value) { return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [] }
+function eventLabel(entry) {
+  const type = String(entry?.event_type || entry?.type || '').trim().toLowerCase().replace(/^notice\./, '')
+  const serverLabel = String(entry?.type_label || '').trim()
+  if (serverLabel && /[\u3400-\u9fff]/.test(serverLabel) && serverLabel.toLowerCase() !== type) return serverLabel
+  let subType = String(entry?.sub_type || '').trim().toLowerCase()
+  if (!subType && entry?.raw_message) {
+    try { subType = String(JSON.parse(entry.raw_message)?.sub_type || '').trim().toLowerCase() } catch {}
+  }
+  return EVENT_SUBTYPE_LABELS[`${type}.${subType}`] || EVENT_LABELS[type] || '未知事件'
+}
 
 const filteredMessages = computed(() => app.currentBotId ? messages.value.filter(m => m.bot_qq === app.currentBotId) : messages.value)
 const filteredLifecycle = computed(() => app.currentBotId ? lifecycle.value.filter(m => m.bot_qq === app.currentBotId) : lifecycle.value)
@@ -158,7 +200,7 @@ watch(() => app.currentBotId, () => fetchLogs())
         <template v-else-if="tab === 'lifecycle'">
           <span class="t-time">{{ e.timestamp }}</span>
           <span v-if="e.bot_qq" class="t-bot">[{{ e.bot_qq }}]</span>
-          <span :class="['t-lc-type', 't-lc-' + (e.event_type || e.type || '')]">{{ { group_add:'入群', group_del:'退群', group_member_add:'用户入群', group_member_del:'用户退群', group_increase:'用户入群', group_decrease:'用户退群', group_recall:'撤回消息', friend_recall:'撤回消息', friend_add:'加好友', friend_del:'删好友', group_admin:'管理变动', group_ban:'禁言', group_upload:'群文件', notify:'提醒', poke:'戳一戳', honor:'群荣誉', lucky_king:'运气王', group_msg_reject:'关闭主动消息', group_msg_receive:'开启主动消息', MESSAGE_REACTION_ADD:'表态', MESSAGE_REACTION_REMOVE:'取消表态', GUILD_UPDATE:'频道更新' }[e.event_type || e.type] || e.event_type || e.type }}</span>
+          <span :class="['t-lc-type', 't-lc-' + (e.event_type || e.type || '')]">{{ eventLabel(e) }}</span>
           <span v-if="e.user_id" class="t-uid">U:{{ e.user_id }}</span>
           <span v-if="e.group_id" class="t-gid">G:{{ e.group_id }}</span>
           <span v-if="e.raw_message || e.content" :class="['t-expand-btn', { active: expandedRaw[i] }]" @click="expandedRaw[i] = !expandedRaw[i]">原始响应</span>
