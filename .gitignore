@@ -9,6 +9,7 @@ temp-dist/
 .vite/
 .cache/
 coverage/
+*.tsbuildinfo
 
 # Local preview logs
 preview.*.log
