@@ -20,6 +20,7 @@ import { api, type ApiData } from "@/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAppDialog } from "@/components/ui/app-dialog";
+import { useToast } from "@/components/ui/toast";
 import {
   Card,
   CardContent,
@@ -40,6 +41,7 @@ import { Input } from "@/components/ui/input";
 
 export function DatabasePage() {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [databases, setDatabases] = useState<ApiData[]>([]);
   const [path, setPath] = useState("");
   const [tables, setTables] = useState<ApiData[]>([]);
@@ -51,7 +53,6 @@ export function DatabasePage() {
   const [total, setTotal] = useState(0);
   const [sql, setSql] = useState("SELECT * FROM sqlite_master");
   const [result, setResult] = useState<ApiData | null>(null);
-  const [notice, setNotice] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export function DatabasePage() {
       .then((data) =>
         setDatabases(Array.isArray(data.databases) ? data.databases : []),
       )
-      .catch((error) => setNotice(errorMessage(error, "数据库列表读取失败")));
+      .catch((error) => toast(errorMessage(error, "数据库列表读取失败"), { variant: "error" }));
   }, []);
 
   const openDatabase = async (nextPath: string) => {
@@ -75,7 +76,7 @@ export function DatabasePage() {
       setSelected([]);
       setShowTechnical(false);
     } catch (error) {
-      setNotice(errorMessage(error, "表列表读取失败"));
+      toast(errorMessage(error, "表列表读取失败"), { variant: "error" });
     }
   };
 
@@ -98,7 +99,7 @@ export function DatabasePage() {
       setTotal(Number(data.total || 0));
       setSelected([]);
     } catch (error) {
-      setNotice(errorMessage(error, "数据查询失败"));
+      toast(errorMessage(error, "数据查询失败"), { variant: "error" });
     }
   };
 
@@ -118,10 +119,10 @@ export function DatabasePage() {
         method: "POST",
         body: JSON.stringify({ path, table, rowids: selected }),
       });
-      setNotice("已删除 " + String(data.deleted || selected.length) + " 行");
+      toast("已删除 " + String(data.deleted || selected.length) + " 行");
       await query(table, page);
     } catch (error) {
-      setNotice(errorMessage(error, "删除失败"));
+      toast(errorMessage(error, "删除失败"), { variant: "error" });
     }
   };
 
@@ -135,7 +136,7 @@ export function DatabasePage() {
         }),
       );
     } catch (error) {
-      setNotice(errorMessage(error, "SQL 执行失败"));
+      toast(errorMessage(error, "SQL 执行失败"), { variant: "error" });
     }
   };
 
@@ -221,7 +222,6 @@ export function DatabasePage() {
         title="数据库"
         detail="浏览表结构、分页查询、删除与导出记录"
       />
-      {notice && <Notice text={notice} error={notice.includes("失败")} />}
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 sm:gap-4 lg:grid-cols-[clamp(220px,24vw,280px)_minmax(0,1fr)] lg:grid-rows-1">
         <Card className="flex max-h-[38dvh] min-h-[220px] min-w-0 flex-col overflow-hidden lg:h-full lg:max-h-none lg:min-h-0">
           <CardHeader className="shrink-0">
@@ -433,6 +433,7 @@ export function DatabasePage() {
 
 export function UpdatePage() {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [version, setVersion] = useState<ApiData | null>(null);
   const [check, setCheck] = useState<ApiData | null>(null);
   const [logs, setLogs] = useState<ApiData[]>([]);
@@ -444,7 +445,6 @@ export function UpdatePage() {
   const [uploadVersion, setUploadVersion] = useState("");
   const [uploadSkipBackup, setUploadSkipBackup] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -460,7 +460,7 @@ export function UpdatePage() {
         setMirrors(Array.isArray(m.data?.mirrors) ? m.data.mirrors : []);
         setMirror(String(m.data?.custom_mirror || ""));
       })
-      .catch((error) => setNotice(errorMessage(error, "版本信息读取失败")));
+      .catch((error) => toast(errorMessage(error, "版本信息读取失败"), { variant: "error" }));
   }, []);
   useEffect(() => {
     const poll = () =>
@@ -480,7 +480,7 @@ export function UpdatePage() {
         body: JSON.stringify({ mirror: value }),
       });
     } catch (error) {
-      setNotice(errorMessage(error, "镜像保存失败"));
+      toast(errorMessage(error, "镜像保存失败"), { variant: "error" });
     }
   };
   const start = async (targetVersion = "") => {
@@ -504,9 +504,9 @@ export function UpdatePage() {
           ...(targetVersion ? { version: targetVersion } : {}),
         }),
       });
-      setNotice(String(data.message || "更新已开始"));
+      toast(String(data.message || "更新已开始"));
     } catch (error) {
-      setNotice(errorMessage(error, "更新启动失败"));
+      toast(errorMessage(error, "更新启动失败"), { variant: "error" });
     } finally {
       setBusy(false);
     }
@@ -531,10 +531,10 @@ export function UpdatePage() {
         method: "POST",
         body: form,
       });
-      setNotice(String(data.message || "上传更新已开始"));
+      toast(String(data.message || "上传更新已开始"));
       setFile(null);
     } catch (error) {
-      setNotice(errorMessage(error, "上传失败"));
+      toast(errorMessage(error, "上传失败"), { variant: "error" });
     } finally {
       setBusy(false);
     }
@@ -574,7 +574,6 @@ export function UpdatePage() {
         title="框架更新"
         detail="检查版本、查看更新日志并选择在线或本地更新"
       />
-      {notice && <Notice text={notice} error={notice.includes("失败")} />}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "当前版本", value: currentVersion, Icon: Download },

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppDialog } from "@/components/ui/app-dialog";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { useToast } from "@/components/ui/toast";
 import {
   Dialog,
   DialogContent,
@@ -79,7 +80,7 @@ const visualConfigGroups: Array<{
         section: "web",
         key: "favicon_url",
         label: "面板图标地址",
-        placeholder: "/web/logo.png",
+        placeholder: "/web/favicon.svg",
       },
       {
         section: "owner",
@@ -228,6 +229,7 @@ const visualConfigGroups: Array<{
 ];
 
 export function ConfigPage() {
+  const toast = useToast();
   const [content, setContent] = useState("");
   const [values, setValues] = useState<Record<string, Record<string, unknown>>>(
     {},
@@ -236,7 +238,7 @@ export function ConfigPage() {
   const [ownerIdsText, setOwnerIdsText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [restartRequired, setRestartRequired] = useState<string[]>([]);
 
   const load = () => {
@@ -251,9 +253,9 @@ export function ConfigPage() {
         setValues(nextValues);
         const ownerIds = nextValues.owner?.ids;
         setOwnerIdsText(Array.isArray(ownerIds) ? ownerIds.join(", ") : "");
-        setNotice("");
+        setLoadError("");
       })
-      .catch((error) => setNotice(errorMessage(error, "读取配置失败")))
+      .catch((error) => setLoadError(errorMessage(error, "读取配置失败")))
       .finally(() => setLoading(false));
   };
 
@@ -269,7 +271,7 @@ export function ConfigPage() {
     setRestartRequired(
       Array.isArray(data.restart_required) ? data.restart_required : [],
     );
-    setNotice(String(data.message || "配置已保存"));
+    toast(String(data.message || "配置已保存"));
   };
 
   const saveYaml = async () => {
@@ -281,7 +283,7 @@ export function ConfigPage() {
       });
       finishSave(data);
     } catch (error) {
-      setNotice(errorMessage(error, "保存失败"));
+      toast(errorMessage(error, "保存失败"), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -315,7 +317,7 @@ export function ConfigPage() {
       });
       finishSave(data);
     } catch (error) {
-      setNotice(errorMessage(error, "保存失败"));
+      toast(errorMessage(error, "保存失败"), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -441,7 +443,7 @@ export function ConfigPage() {
           </Button>
         </div>
       </div>
-      {notice && <Notice text={notice} error={notice.includes("失败")} />}
+      {loadError && <Notice text={loadError} error />}
       {restartRequired.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span>以下配置需重启框架生效：</span>
@@ -515,12 +517,13 @@ export function ConnectionsPage({
   createSignal?: number;
 }) {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [connections, setConnections] = useState<ApiData[]>([]);
   const [status, setStatus] = useState<ApiData[]>([]);
   const [server, setServer] = useState<ApiData>({ host: "0.0.0.0", port: 5201 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [editIndex, setEditIndex] = useState(-1);
   const [editorOpen, setEditorOpen] = useState(false);
   const [form, setForm] = useState<ApiData>(() => newConnection({}));
@@ -533,7 +536,7 @@ export function ConnectionsPage({
         setStatus(Array.isArray(data.status) ? data.status : []);
         setServer(data.server || { host: "0.0.0.0", port: 5201 });
       })
-      .catch((error) => setNotice(errorMessage(error, "读取连接失败")))
+      .catch((error) => setLoadError(errorMessage(error, "读取连接失败")))
       .finally(() => setLoading(false));
   };
 
@@ -548,10 +551,10 @@ export function ConnectionsPage({
       });
       setConnections(Array.isArray(data.connections) ? data.connections : next);
       setStatus(Array.isArray(data.status) ? data.status : []);
-      setNotice(String(data.message || message));
+      toast(String(data.message || message));
       return true;
     } catch (error) {
-      setNotice(errorMessage(error, "保存失败"));
+      toast(errorMessage(error, "保存失败"), { variant: "error" });
       return false;
     } finally {
       setSaving(false);
@@ -597,12 +600,12 @@ export function ConnectionsPage({
 
   const saveForm = async () => {
     if (!String(form.name || "").trim()) {
-      setNotice("请填写连接名称");
+      toast("请填写连接名称", { variant: "info" });
       return;
     }
     const meta = connectionTypes[form.type as ConnectionKind];
     if (meta.mode === "client" && !String(form.url || "").trim()) {
-      setNotice("请填写连接地址");
+      toast("请填写连接地址", { variant: "info" });
       return;
     }
     const next = [...connections];
@@ -648,7 +651,7 @@ export function ConnectionsPage({
           <Button size="sm" onClick={openAdd}><Plus className="size-3.5" />新建接入</Button>
         </div>
       </div>
-      {notice && <Notice text={notice} error={notice.includes("失败") || notice.includes("请填写")} />}
+      {loadError && <Notice text={loadError} error />}
       {loading ? <Busy /> : connections.length ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {connections.map((item, index) => {

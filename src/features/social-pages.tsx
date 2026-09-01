@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Boxes, Download, ExternalLink, FileImage, FileText, MessageSquare, PackageOpen, RefreshCw, Reply, Search, Send, Trash2, X } from "lucide-react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { useAppDialog } from "@/components/ui/app-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { Busy, FeatureHeading, Notice, SelectBox, errorMessage } from "@/features/shared";
 import { cn } from "@/lib/utils";
 
@@ -152,9 +153,21 @@ function quotedMessageSummary(message: ApiData): string {
   return types.length ? types.map((type) => labels[type] || "[" + type + "]").join(" ") : "[消息]";
 }
 
-export function MessagesPage() {
+export function MessagesPage({
+  bots,
+  selectedBot: bot,
+  botsLoading,
+  onSelectBot,
+  onRefreshBots,
+}: {
+  bots: ApiData[];
+  selectedBot: string;
+  botsLoading: boolean;
+  onSelectBot: (value: string) => void;
+  onRefreshBots: () => void;
+}) {
   const dialog = useAppDialog();
-  const [bot, setBot] = useState("");
+  const toast = useToast();
   const [chatType, setChatType] = useState<"group" | "user">("group");
   const [search, setSearch] = useState("");
   const [chats, setChats] = useState<ApiData[]>([]);
@@ -165,10 +178,11 @@ export function MessagesPage() {
   const [messageType, setMessageType] = useState<"text" | "media">("text");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState("");
   const [recallStatus, setRecallStatus] = useState<Record<string, string>>({});
   const [rawMessage, setRawMessage] = useState<ApiData | null>(null);
   const [quotedMessage, setQuotedMessage] = useState<ApiData | null>(null);
+  const historyViewportRef = useRef<HTMLDivElement>(null);
+  const shouldScrollToBottomRef = useRef(false);
 
   const avatarUrl = (chat: ApiData) => {
     const id = String(chat.chat_id || "");
@@ -186,7 +200,7 @@ export function MessagesPage() {
         body: JSON.stringify({ bot_qq: bot, type: chatType, search, page: 1, page_size: 1000 }),
       });
       setChats(Array.isArray(data.data?.chats) ? data.data.chats : []);
-    } catch (error) { setNotice(errorMessage(error, "读取会话失败")); }
+    } catch (error) { toast(errorMessage(error, "读取会话失败"), { variant: "error" }); }
     finally { setLoading(false); }
   };
 
@@ -196,11 +210,22 @@ export function MessagesPage() {
     setRecallStatus({});
     setQuotedMessage(null);
     loadChats();
-  }, [chatType]);
+  }, [chatType, bot]);
+
+  useEffect(() => {
+    if (!shouldScrollToBottomRef.current || !historyViewportRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = historyViewportRef.current;
+      if (viewport) viewport.scrollTop = viewport.scrollHeight;
+      shouldScrollToBottomRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [history]);
 
   const openChat = async (chat: ApiData) => {
     const changesChat = String(selected?.chat_id || "") !== String(chat.chat_id || "") || String(selected?.bot_qq || "") !== String(chat.bot_qq || "");
     setSelected(chat);
+    shouldScrollToBottomRef.current = true;
     setRecallStatus({});
     if (changesChat) setQuotedMessage(null);
     try {
@@ -224,7 +249,7 @@ export function MessagesPage() {
       } catch {
         setHistory(messages);
       }
-    } catch (error) { setNotice(errorMessage(error, "读取历史失败")); }
+    } catch (error) { toast(errorMessage(error, "读取历史失败"), { variant: "error" }); }
   };
 
   const send = async () => {
@@ -261,20 +286,20 @@ export function MessagesPage() {
       if (result.state === "error") throw result.error;
       clearSentDraft();
       if (result.state === "success") {
-        setNotice("消息发送成功");
+        toast("消息发送成功");
         void openChat(selected);
       } else {
-        setNotice("消息已提交，发送结果正在同步");
+        toast("消息已提交，发送结果正在同步", { variant: "info" });
         void request.then((lateResult) => {
           if (lateResult.state === "success") {
-            setNotice("消息发送成功");
+            toast("消息发送成功");
             void openChat(selected);
           } else {
-            setNotice(errorMessage(lateResult.error, "发送结果确认失败"));
+            toast(errorMessage(lateResult.error, "发送结果确认失败"), { variant: "error" });
           }
         });
       }
-    } catch (error) { setNotice(errorMessage(error, "发送失败")); }
+    } catch (error) { toast(errorMessage(error, "发送失败"), { variant: "error" }); }
     finally { setSending(false); }
   };
 
@@ -286,9 +311,11 @@ export function MessagesPage() {
     try {
       await api("/api/message/recall", { method: "POST", body: JSON.stringify({ message_id: messageId, bot_qq: bot || selected?.bot_qq }) });
       setHistory((current) => current.map((item) => String(item.message_id || item.id) === recallKey ? { ...item, recalled: true } : item));
-      setRecallStatus((current) => ({ ...current, [recallKey]: "已撤回" }));
+      setRecallStatus((current) => { const next = { ...current }; delete next[recallKey]; return next; });
+      toast("消息已撤回");
     } catch (error) {
-      setRecallStatus((current) => ({ ...current, [recallKey]: "撤回失败：" + errorMessage(error, "请求失败") }));
+      setRecallStatus((current) => { const next = { ...current }; delete next[recallKey]; return next; });
+      toast("撤回失败：" + errorMessage(error, "请求失败"), { variant: "error" });
     }
   };
 
@@ -298,25 +325,37 @@ export function MessagesPage() {
     if (remark === null) return;
     try {
       await api("/api/message/remarks", { method: "POST", body: JSON.stringify({ group_id: selected.chat_id, remark, qq: selected.group_qq || "" }) });
-      setNotice("群备注已保存"); await loadChats();
-    } catch (error) { setNotice(errorMessage(error, "备注保存失败")); }
+      toast("群备注已保存"); await loadChats();
+    } catch (error) { toast(errorMessage(error, "备注保存失败"), { variant: "error" }); }
   };
 
   const selectedId = selected ? String(selected.chat_id || "") : "";
   return <section className="space-y-4">
     <FeatureHeading icon={MessageSquare} title="消息" detail="好友与群列表、历史消息和消息发送" />
-    {notice && <Notice text={notice} error={notice.includes("失败")} />}
     <Card className="overflow-hidden">
       <CardContent className="p-0">
         <div className="flex flex-wrap items-center gap-2 border-b p-2.5 sm:p-3">
-          <Input className="w-full sm:w-[180px]" value={bot} onChange={(event) => setBot(event.target.value)} placeholder="机器人 QQ（可选）" />
+          <select
+            value={bot}
+            disabled={botsLoading || !bots.length}
+            onChange={(event) => onSelectBot(event.target.value)}
+            aria-label="选择机器人"
+            className="h-10 w-full min-w-0 rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:opacity-60 sm:w-[220px]"
+          >
+            {!bots.length && <option value="">暂无机器人</option>}
+            {bots.length > 1 && <option value="">全部机器人</option>}
+            {bots.map((item, index) => {
+              const value = String(item.bot_qq || item.qq || item.uin || item.bot_id || "");
+              return value ? <option key={value || index} value={value}>{String(item.name || item.nickname || value)} · {value}</option> : null;
+            })}
+          </select>
           <div className="flex shrink-0 rounded-md border bg-muted/30 p-0.5">
             <Button variant={chatType === "group" ? "default" : "ghost"} size="sm" onClick={() => setChatType("group")}>群消息</Button>
             <Button variant={chatType === "user" ? "default" : "ghost"} size="sm" onClick={() => setChatType("user")}>好友消息</Button>
           </div>
           <Input className="w-full min-w-0 sm:flex-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={chatType === "group" ? "搜索群名称或群号" : "搜索好友昵称或 QQ"} onKeyDown={(event) => { if (event.key === "Enter") loadChats(); }} />
           <Button size="sm" variant="outline" onClick={loadChats}><Search className="size-3.5" />查询</Button>
-          <Button size="icon" variant="ghost" onClick={loadChats} title="刷新联系人"><RefreshCw className="size-4" /></Button>
+          <Button size="icon" variant="ghost" onClick={() => { onRefreshBots(); void loadChats(); }} title="刷新机器人与联系人"><RefreshCw className="size-4" /></Button>
         </div>
         <div className="grid min-h-0 md:min-h-[640px] md:grid-cols-[clamp(190px,28vw,230px)_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="min-w-0 border-b md:border-b-0 md:border-r">
@@ -339,7 +378,7 @@ export function MessagesPage() {
               <div className="min-w-0 flex-1"><p className="break-words font-semibold">{selected ? chatDisplayName(selected) : "请选择会话"}</p><p className="break-words text-xs text-muted-foreground">{selected ? (chatType === "group" ? "群号：" : "QQ：") + selected.chat_id + " · 接入账号：" + (selected.bot_qq || bot || "自动选择") : "从列表选择好友或群后即可查看和发送消息"}</p></div>
               {selected && chatType === "group" && <Button className="w-full min-[380px]:w-auto" size="sm" variant="outline" onClick={editRemark}>群备注</Button>}
             </div>
-            <div className="min-h-[300px] flex-1 space-y-3 overflow-y-auto overscroll-contain bg-muted/20 p-2.5 sm:min-h-[360px] sm:p-4 md:max-h-[470px]">
+            <div ref={historyViewportRef} className="min-h-[300px] flex-1 space-y-3 overflow-y-auto overscroll-contain bg-muted/20 p-2.5 sm:min-h-[360px] sm:p-4 md:max-h-[470px]">
               {selected && history.length ? history.map((message, index) => {
                 const id = message.message_id || message.id;
                 const recallable = Boolean(message.message_id);
@@ -356,9 +395,8 @@ export function MessagesPage() {
                   </div>
                     <div className="flex w-[4.5rem] shrink-0 flex-col items-start gap-1 sm:w-auto">
                       <button type="button" aria-label="引用此消息" title={message.message_id ? "引用此消息" : "该消息没有可用的消息 ID"} disabled={!message.message_id || message.recalled} onClick={() => setQuotedMessage(message)} className="inline-flex items-center gap-1 px-1 text-[11px] text-muted-foreground transition-colors hover:text-primary focus-visible:text-primary disabled:cursor-not-allowed disabled:opacity-40"><Reply className="size-3" />引用</button>
-                      {recallable && !message.recalled && <button type="button" aria-label="撤回此消息" disabled={rowStatus === "撤回中…"} onClick={() => recall(message)} className="px-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive focus-visible:text-destructive disabled:cursor-wait disabled:opacity-60">{rowStatus?.startsWith("撤回失败") ? "重试" : "撤回"}</button>}
+                      {recallable && !message.recalled && <button type="button" aria-label="撤回此消息" disabled={rowStatus === "撤回中…"} onClick={() => recall(message)} className="px-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive focus-visible:text-destructive disabled:cursor-wait disabled:opacity-60">{rowStatus === "撤回中…" ? "撤回中" : "撤回"}</button>}
                       <button type="button" aria-label="查看原始内容" onClick={() => setRawMessage(message)} className="px-1 text-[11px] text-muted-foreground transition-colors hover:text-primary focus-visible:text-primary">原始内容</button>
-                      {rowStatus && <span className={cn("max-w-24 break-words px-1 text-[11px] sm:max-w-[160px]", rowStatus.startsWith("撤回失败") ? "text-destructive" : "text-muted-foreground")}>{rowStatus}</span>}
                     </div>
                   </div>
                 </div>;
@@ -465,6 +503,7 @@ function marketMarkdownHtml(preview: ApiData): string {
 
 export function MarketPage() {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [items, setItems] = useState<ApiData[]>([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -473,7 +512,6 @@ export function MarketPage() {
   const [mirrors, setMirrors] = useState<string[]>([]);
   const [preview, setPreview] = useState<ApiData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState("");
 
   const load = async (refresh = false) => {
     setLoading(true);
@@ -483,7 +521,7 @@ export function MarketPage() {
       setItems(Array.isArray(list.data) ? list.data : []);
       setMirror(String(mirrorData.mirror || ""));
       setMirrors(Array.isArray(mirrorData.mirrors) ? mirrorData.mirrors : []);
-    } catch (error) { setNotice(errorMessage(error, "市场读取失败")); }
+    } catch (error) { toast(errorMessage(error, "市场读取失败"), { variant: "error" }); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -491,15 +529,15 @@ export function MarketPage() {
   const saveMirror = async (value: string) => {
     setMirror(value);
     try { await api("/api/market/mirror", { method: "POST", body: JSON.stringify({ mirror: value }) }); }
-    catch (error) { setNotice(errorMessage(error, "镜像保存失败")); }
+    catch (error) { toast(errorMessage(error, "镜像保存失败"), { variant: "error" }); }
   };
   const changeInstall = async (item: ApiData) => {
     const removing = Boolean(item.installed && !item.has_update);
     if (removing && !await dialog.confirm({ title: "卸载插件", description: "卸载 " + item.name + "？插件代码会被移除，配置与数据将保留。", confirmLabel: "卸载", destructive: true })) return;
     try {
       await api(removing ? "/api/market/uninstall" : "/api/market/install", { method: "POST", body: JSON.stringify(removing ? { name: item.name, type: marketType(item), keep_data: true } : { ...item, type: marketType(item), mirror }) });
-      setNotice(removing ? "卸载成功" : item.has_update ? "更新成功" : "安装成功"); await load();
-    } catch (error) { setNotice(errorMessage(error, removing ? "卸载失败" : "安装失败")); }
+      toast(removing ? "卸载成功" : item.has_update ? "更新成功" : "安装成功"); await load();
+    } catch (error) { toast(errorMessage(error, removing ? "卸载失败" : "安装失败"), { variant: "error" }); }
   };
   const showPreview = async (item: ApiData) => {
     if (!item.github) return;
@@ -520,7 +558,7 @@ export function MarketPage() {
         selected: String(files[0]?.path || files[0]?.name || ""),
       });
     }
-    catch (error) { setNotice(errorMessage(error, "预览失败")); }
+    catch (error) { toast(errorMessage(error, "预览失败"), { variant: "error" }); }
   };
 
   const categories = [...new Set(items.filter((item) => marketType(item) === marketKind).map((item) => String(item.category || "")).filter(Boolean))];
@@ -532,7 +570,6 @@ export function MarketPage() {
 
   return <section className="space-y-4 sm:space-y-6">
     <FeatureHeading icon={PackageOpen} title="插件市场" detail="浏览社区插件、模块和扩展，安装前可查阅使用文档" />
-    {notice && <Notice text={notice} error={notice.includes("失败")} />}
     <Card><CardContent className="p-3 sm:p-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className="flex min-w-0 flex-1 rounded-md border bg-muted/30 p-0.5 sm:flex-none">{([["complete", "完整插件"], ["single", "独立插件"], ["module", "模块"]] as const).map(([value, label]) => <Button key={value} size="sm" className="min-w-0 flex-1 sm:flex-none" variant={marketKind === value ? "default" : "ghost"} onClick={() => { setMarketKind(value); setCategory(""); }}>{value === "module" ? <Boxes className="size-3.5" /> : <PackageOpen className="size-3.5" />}{label}</Button>)}</div>

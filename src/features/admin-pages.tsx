@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/App";
 import { JsonTree } from "@/components/ui/json-tree";
 import { useAppDialog } from "@/components/ui/app-dialog";
+import { useToast } from "@/components/ui/toast";
 
 const logTypes = [
   { id: "message", label: "消息" },
@@ -122,6 +123,7 @@ function LogRow({ row, tab }: { row: ApiData; tab: string }) {
 }
 
 export function LogsPage() {
+  const toast = useToast();
   const [data, setData] = useState<ApiData>({
     framework: [],
     message: [],
@@ -131,7 +133,7 @@ export function LogsPage() {
   const [login, setLogin] = useState<ApiData>({ data: [], stats: {} });
   const [tab, setTab] = useState<(typeof logTypes)[number]["id"]>("message");
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const [liveTransport, setLiveTransport] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -172,7 +174,7 @@ export function LogsPage() {
       });
       setLogin(loginData);
     } catch (error) {
-      setNotice(errorMessage(error, "日志读取失败"));
+      setLoadError(errorMessage(error, "日志读取失败"));
     } finally {
       setLoading(false);
     }
@@ -272,10 +274,10 @@ export function LogsPage() {
         method: "POST",
         body: JSON.stringify({ ip }),
       });
-      setNotice(String(result.message || "操作完成"));
+      toast(String(result.message || "操作完成"));
       await load();
     } catch (error) {
-      setNotice(errorMessage(error, "操作失败"));
+      toast(errorMessage(error, "操作失败"), { variant: "error" });
     }
   };
 
@@ -286,7 +288,7 @@ export function LogsPage() {
         title="日志"
         detail="消息、事件、框架、错误与登录记录"
       />
-      {notice && <Notice text={notice} error={notice.includes("失败")} />}
+      {loadError && <Notice text={loadError} error />}
       <div className="flex flex-wrap items-center gap-2">
         {logTypes.map((item) => {
           const count =
@@ -438,13 +440,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export function SettingsPage() {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [system, setSystem] = useState<ApiData>({});
   const [dependencies, setDependencies] = useState<ApiData>({
     dependencies: [],
   });
   const [password, setPassword] = useState<ApiData>({});
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -457,7 +460,7 @@ export function SettingsPage() {
         setDependencies(dependencyData);
         setPassword(passwordData);
       })
-      .catch((error) => setNotice(errorMessage(error, "系统信息读取失败")))
+      .catch((error) => setLoadError(errorMessage(error, "系统信息读取失败")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -465,9 +468,9 @@ export function SettingsPage() {
     if (!await dialog.confirm({ title: "重启框架", description: "重启 ElainaBot？Web 面板会短暂断开。", confirmLabel: "重启", destructive: true })) return;
     try {
       const result = await api<ApiData>("/api/bot/restart", { method: "POST" });
-      setNotice(String(result.message || "正在重启"));
+      toast(String(result.message || "正在重启"));
     } catch (error) {
-      setNotice(errorMessage(error, "重启失败"));
+      toast(errorMessage(error, "重启失败"), { variant: "error" });
     }
   };
 
@@ -478,7 +481,7 @@ export function SettingsPage() {
         title="系统设置"
         detail="运行环境、依赖状态、安全提示与维护操作"
       />
-      {notice && <Notice text={notice} error={notice.includes("失败")} />}
+      {loadError && <Notice text={loadError} error />}
       {(password.is_default || password.is_weak) && (
         <div className="flex min-h-12 items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm leading-6 text-amber-900 sm:items-center">
           <ShieldCheck className="size-5" />

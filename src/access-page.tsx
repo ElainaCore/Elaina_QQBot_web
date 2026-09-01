@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type ComponentType } from "react";
 import {
   Bot,
   ChevronRight,
-  CircleAlert,
   Download,
   ExternalLink,
   Link2,
@@ -27,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { useAppDialog } from "@/components/ui/app-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { useToast } from "@/components/ui/toast";
 import { ConnectionsPage } from "@/features/basic-pages";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +81,7 @@ function AccessMethod({ icon: MethodIcon, title, detail, onClick }: { icon: Icon
 
 export function AccessCenterPage() {
   const dialog = useAppDialog();
+  const toast = useToast();
   const [view, setView] = useState<AccessView>("accounts");
   const [bots, setBots] = useState<ApiData[]>([]);
   const [versions, setVersions] = useState<ApiData[]>([]);
@@ -89,7 +90,7 @@ export function AccessCenterPage() {
   const [platform, setPlatform] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addStep, setAddStep] = useState<AddStep>("choose");
   const [connectionSignal, setConnectionSignal] = useState(0);
@@ -97,6 +98,7 @@ export function AccessCenterPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const [botData, versionData, statusData, systemData, processData] = await Promise.all([
         api<ApiData>("/api/bots"),
@@ -116,7 +118,7 @@ export function AccessCenterPage() {
         qq_version_key: current.qq_version_key || String(nextVersions.find((item: ApiData) => item.recommended)?.key || nextVersions.find((item: ApiData) => item.compatible)?.key || ""),
       }));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "接入信息读取失败");
+      setLoadError(error instanceof Error ? error.message : "接入信息读取失败");
     } finally {
       setLoading(false);
     }
@@ -136,16 +138,16 @@ export function AccessCenterPage() {
   };
 
   const createEmbedded = async () => {
-    if (!form.bot_id.trim()) { setNotice("请输入账号标识"); return; }
+    if (!form.bot_id.trim()) { toast("请输入账号标识", { variant: "info" }); return; }
     setBusy("create");
     try {
       await api("/api/embedded/bots", { method: "POST", body: JSON.stringify(form) });
       setForm((current) => ({ ...current, bot_id: "", nickname: "", uin: "" }));
       setAddOpen(false);
-      setNotice("内置 QQ 账号已创建");
+      toast("内置 QQ 账号已创建");
       await load();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "创建失败");
+      toast(error instanceof Error ? error.message : "创建失败", { variant: "error" });
     } finally { setBusy(""); }
   };
 
@@ -155,10 +157,10 @@ export function AccessCenterPage() {
     setBusy(`inject:${process.pid}`);
     try {
       await api(`/api/processes/${process.pid}/attach`, { method: "POST", body: "{}" });
-      setNotice(`QQ 进程 PID ${process.pid} 已注入并接管`);
+      toast(`QQ 进程 PID ${process.pid} 已注入并接管`);
       await load();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "注入失败");
+      toast(error instanceof Error ? error.message : "注入失败", { variant: "error" });
     } finally { setBusy(""); }
   };
 
@@ -169,9 +171,10 @@ export function AccessCenterPage() {
     setBusy(`${action}:${botId}`);
     try {
       await api(`/api/embedded/${action}`, { method: "POST", body: JSON.stringify({ bot_id: botId, cleanup_data: false }) });
+      toast(action === "start" ? "QQ 已启动" : action === "stop" ? "QQ 已停止" : action === "delete" ? "账号已删除" : "二维码已刷新");
       await load();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "操作失败");
+      toast(error instanceof Error ? error.message : "操作失败", { variant: "error" });
     } finally { setBusy(""); }
   };
 
@@ -180,9 +183,9 @@ export function AccessCenterPage() {
     setBusy(`detach:${bot.pid}`);
     try {
       await api(`/api/processes/${bot.pid}/detach`, { method: "POST", body: "{}" });
-      setNotice("QQ 接管已解除");
+      toast("QQ 接管已解除");
       await load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "解除接管失败"); }
+    } catch (error) { toast(error instanceof Error ? error.message : "解除接管失败", { variant: "error" }); }
     finally { setBusy(""); }
   };
 
@@ -192,8 +195,9 @@ export function AccessCenterPage() {
     try {
       const body = endpoint === "version" ? { bot_id: botId, qq_version_key: value } : { bot_id: botId, enabled: value };
       await api(`/api/embedded/${endpoint}`, { method: "POST", body: JSON.stringify(body) });
+      toast("账号设置已保存");
       await load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "保存失败"); }
+    } catch (error) { toast(error instanceof Error ? error.message : "保存失败", { variant: "error" }); }
     finally { setBusy(""); }
   };
 
@@ -201,9 +205,9 @@ export function AccessCenterPage() {
     setBusy(`qq:${action}:${versionKey}`);
     try {
       const result = await api<ApiData>(`/api/qq/${action}`, { method: "POST", body: JSON.stringify({ version_key: versionKey, auto_download: true }) });
-      setNotice(String(result.message || result.job?.message || "任务已提交"));
+      toast(String(result.message || result.job?.message || "任务已提交"));
       await load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "QQ 客户端操作失败"); }
+    } catch (error) { toast(error instanceof Error ? error.message : "QQ 客户端操作失败", { variant: "error" }); }
     finally { setBusy(""); }
   };
 
@@ -224,7 +228,7 @@ export function AccessCenterPage() {
         </div>
       </div>
 
-      {notice && <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-4 py-3 text-sm"><CircleAlert className="size-4 shrink-0 text-primary" />{notice}</div>}
+      {loadError && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{loadError}</div>}
 
       {view === "onebot" ? <ConnectionsPage compact createSignal={connectionSignal} /> : (
         <>
@@ -237,11 +241,11 @@ export function AccessCenterPage() {
                 const running = Boolean(bot.pid || bot.connected || ["logging_in", "waiting_qr", "authorizing", "online"].includes(String(bot.status)));
                 const online = Boolean(bot.connected || bot.status === "online");
                 return (
-                  <Card key={botId || bot.bot_qq || index}>
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between gap-3">
+                  <Card key={botId || bot.bot_qq || index} className="overflow-hidden">
+                    <CardContent className="p-5 pt-6 sm:p-6">
+                      <div className="flex min-h-12 items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3"><AccountAvatar bot={bot} /><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{bot.name || bot.nickname || bot.qq || bot.bot_qq || botId}</h3><p className="mt-1 truncate text-xs text-muted-foreground">QQ {bot.qq || bot.bot_qq || "等待登录"}</p></div></div>
-                        <Badge variant={online ? "success" : running ? "warning" : "secondary"}>{statusText(bot)}</Badge>
+                        <Badge className="shrink-0" variant={online ? "success" : running ? "warning" : "secondary"}>{statusText(bot)}</Badge>
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-md bg-muted/60 p-2.5"><span className="text-muted-foreground">接入方式</span><p className="mt-1 truncate font-medium">{bot.connection_type || bot.runtime_mode || (embedded ? "内置 QQ" : "OneBot")}</p></div><div className="rounded-md bg-muted/60 p-2.5"><span className="text-muted-foreground">运行信息</span><p className="mt-1 truncate font-medium">{bot.pid ? `PID ${bot.pid}` : bot.bridge_port ? `桥接端口 ${bot.bridge_port}` : bot.connected ? "连接正常" : "未连接"}</p></div></div>
                       {bot.error && <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{bot.error}</p>}

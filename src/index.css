@@ -69,6 +69,26 @@
     0 12px 32px -22px oklch(20% 0.03 250 / 0.28);
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+#root :is(main, section, article, aside, header, footer) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
+}
+
 .dark {
   --background: oklch(16% 0.02 250);
   --foreground: oklch(96% 0.01 240);

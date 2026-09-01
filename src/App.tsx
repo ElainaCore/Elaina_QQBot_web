@@ -7,8 +7,10 @@ import {
 } from "react";
 import {
   ArrowRight,
+  Bot,
   Boxes,
   Check,
+  ChevronDown,
   ChevronRight,
   Database,
   Download,
@@ -26,6 +28,7 @@ import {
   PanelLeftOpen,
   MessageSquare,
   PackageOpen,
+  Palette,
   PlugZap,
   RefreshCw,
   Sparkles,
@@ -37,6 +40,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api, type ApiData } from "@/api";
+import { applyColorTheme, COLOR_THEMES, storedColorTheme, type ColorThemeName } from "@/theme-colors";
 import { OverviewPage } from "@/pages";
 import { AccessCenterPage } from "@/access-page";
 import { LogsPage } from "@/features/admin-pages";
@@ -62,6 +66,19 @@ export type Page =
   | "extensions"
   | "logs";
 type Icon = ComponentType<{ className?: string }>;
+
+function botValue(bot: ApiData) {
+  return String(bot.bot_qq || bot.qq || bot.uin || bot.bot_id || "");
+}
+
+function botName(bot: ApiData) {
+  return String(bot.name || bot.nickname || bot.qq || bot.bot_qq || bot.bot_id || "未知机器人");
+}
+
+function botAvatar(bot: ApiData) {
+  const value = botValue(bot);
+  return String(bot.avatar || (value && /^\d+$/.test(value) ? "https://q1.qlogo.cn/g?b=qq&nk=" + encodeURIComponent(value) + "&s=100" : ""));
+}
 
 const navigation: Array<{
   id: Page;
@@ -177,7 +194,6 @@ function Login({ onAuthed }: { onAuthed: () => void }) {
     const saved = window.localStorage.getItem("elaina_appearance_mode");
     return saved === "light" || saved === "dark" ? saved : "auto";
   });
-
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const applyAppearance = () => {
@@ -399,6 +415,98 @@ function Sidebar({
   );
 }
 
+function BotSelector({
+  bots,
+  value,
+  loading,
+  onChange,
+}: {
+  bots: ApiData[];
+  value: string;
+  loading: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = bots.find((bot) => botValue(bot) === value);
+  const label = selected ? botName(selected) : bots.length ? "全部机器人" : "暂无机器人";
+  const avatar = selected ? botAvatar(selected) : "";
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className="flex h-9 min-w-0 max-w-[138px] items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 text-left text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-[480px]:max-w-[180px] lg:max-w-[220px]"
+          aria-label="选择机器人"
+          title="选择机器人"
+        >
+          {loading ? (
+            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : avatar ? (
+            <img src={avatar} alt="" className="media-outline size-6 shrink-0 rounded-full object-cover" loading="lazy" />
+          ) : (
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Bot className="size-3.5" /></span>
+          )}
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content sideOffset={8} align="start" collisionPadding={12} className="z-[80] w-[min(290px,calc(100vw-24px))] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-lg outline-none">
+          <div className="px-2 pb-2 pt-1 text-xs font-medium text-muted-foreground">选择机器人</div>
+          <div className="max-h-72 space-y-1 overflow-y-auto overscroll-contain">
+            {bots.length > 1 && (
+              <button type="button" onClick={() => { onChange(""); setOpen(false); }} className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent", !value && "bg-accent")}>
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Bot className="size-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-medium">全部机器人</span><span className="block text-xs text-muted-foreground">{bots.length} 个接入账号</span></span>
+                {!value && <Check className="size-4 shrink-0 text-primary" />}
+              </button>
+            )}
+            {bots.map((bot, index) => {
+              const id = botValue(bot);
+              const active = id === value || (bots.length === 1 && !value);
+              const image = botAvatar(bot);
+              return (
+                <button key={id || index} type="button" disabled={!id} onClick={() => { onChange(id); setOpen(false); }} className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent disabled:opacity-50", active && "bg-accent")}>
+                  {image ? <img src={image} alt="" className="media-outline size-8 shrink-0 rounded-full object-cover" loading="lazy" /> : <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold">{botName(bot).charAt(0)}</span>}
+                  <span className="min-w-0 flex-1"><span className="block truncate font-medium">{botName(bot)}</span><span className="block truncate text-xs text-muted-foreground">{id || "等待登录"}</span></span>
+                  <span className={cn("size-2 shrink-0 rounded-full", bot.connected || bot.status === "online" ? "bg-emerald-500" : "bg-muted-foreground/35")} />
+                  {active && <Check className="size-4 shrink-0 text-primary" />}
+                </button>
+              );
+            })}
+            {!loading && !bots.length && <div className="px-2 py-5 text-center text-xs text-muted-foreground">暂无可选择的机器人</div>}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function ThemeColorPicker({ value, onChange }: { value: ColorThemeName; onChange: (value: ColorThemeName) => void }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <Button variant="ghost" size="icon" aria-label="更换主题颜色" title="更换主题颜色"><Palette className="size-4" /></Button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content sideOffset={8} align="end" collisionPadding={12} className="z-[80] w-[min(280px,calc(100vw-24px))] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-lg outline-none">
+          <div className="px-2 pb-2 pt-1 text-xs font-medium text-muted-foreground">主题颜色</div>
+          <div className="grid max-h-[min(360px,70dvh)] grid-cols-2 gap-1 overflow-y-auto overscroll-contain">
+            {(Object.entries(COLOR_THEMES) as Array<[ColorThemeName, (typeof COLOR_THEMES)[ColorThemeName]]>).map(([key, theme]) => (
+              <button key={key} type="button" onClick={() => onChange(key)} className={cn("flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-accent", value === key && "bg-accent font-semibold text-primary")}>
+                <span className="size-3.5 shrink-0 rounded-full border border-black/10" style={{ background: theme.accent }} />
+                <span className="min-w-0 flex-1 truncate">{theme.name}</span>
+                {value === key && <Check className="size-3.5 shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function Shell({
   page,
   navigate,
@@ -412,17 +520,82 @@ function Shell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [bots, setBots] = useState<ApiData[]>([]);
+  const [botsLoading, setBotsLoading] = useState(true);
+  const [selectedBot, setSelectedBot] = useState(() => window.localStorage.getItem("elainaqq_bot") || "");
+  const [colorTheme, setColorTheme] = useState<ColorThemeName>(storedColorTheme);
+  const [appearanceMode, setAppearanceMode] = useState<"auto" | "light" | "dark">(() => {
+    const saved = window.localStorage.getItem("elaina_appearance_mode");
+    return saved === "light" || saved === "dark" ? saved : "auto";
+  });
+  const [resolvedDark, setResolvedDark] = useState(() =>
+    window.localStorage.getItem("elaina_appearance_mode") === "dark" ||
+    (window.localStorage.getItem("elaina_appearance_mode") !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches),
+  );
   const [extensionPages, setExtensionPages] = useState<ApiData[]>([]);
   const [selectedExtension, setSelectedExtension] = useState(() => window.localStorage.getItem("elaina_extension_page") || "");
   const [extensionLoading, setExtensionLoading] = useState(true);
   const [extensionNotice, setExtensionNotice] = useState("");
   const current = navigation.find((item) => item.id === page)!;
   const fullBleed = page === "extensions";
+  const loadBots = useCallback(async (showLoading = true) => {
+    if (showLoading) setBotsLoading(true);
+    try {
+      const data = await api<ApiData>("/api/bots");
+      const nextBots = Array.isArray(data.bots) ? data.bots : [];
+      setBots(nextBots);
+      setSelectedBot((currentValue) => {
+        if (currentValue && nextBots.some((bot) => botValue(bot) === currentValue)) return currentValue;
+        const renamed = nextBots.find((bot) => String(bot.bot_id || "") === currentValue);
+        const nextValue = renamed ? botValue(renamed) : nextBots.length === 1 ? botValue(nextBots[0]) : "";
+        if (nextValue) window.localStorage.setItem("elainaqq_bot", nextValue);
+        else window.localStorage.removeItem("elainaqq_bot");
+        return nextValue;
+      });
+    } catch {
+      // Individual pages surface API failures; keep the last successful topbar list.
+    } finally {
+      if (showLoading) setBotsLoading(false);
+    }
+  }, []);
+  const selectBot = useCallback((value: string) => {
+    setSelectedBot(value);
+    if (value) window.localStorage.setItem("elainaqq_bot", value);
+    else window.localStorage.removeItem("elainaqq_bot");
+  }, []);
+  const selectColorTheme = (value: ColorThemeName) => {
+    setColorTheme(value);
+    window.localStorage.setItem("elainaqq_theme", value);
+    applyColorTheme(value);
+  };
   const refresh = () => {
     setRefreshing(true);
     setReloadKey((value) => value + 1);
+    void loadBots(false);
     window.setTimeout(() => setRefreshing(false), 450);
   };
+  useEffect(() => {
+    applyColorTheme(colorTheme);
+  }, [colorTheme]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      const dark = appearanceMode === "dark" || (appearanceMode === "auto" && media.matches);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.classList.toggle("light", !dark);
+      setResolvedDark(dark);
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [appearanceMode]);
+  useEffect(() => {
+    void loadBots();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void loadBots(false);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [loadBots]);
   useEffect(() => {
     let active = true;
     setExtensionLoading(true);
@@ -461,7 +634,14 @@ function Shell({
     ) : page === "access" ? (
       <AccessCenterPage key={reloadKey} />
     ) : page === "messages" ? (
-      <MessagesPage key={reloadKey} />
+      <MessagesPage
+        key={reloadKey}
+        bots={bots}
+        selectedBot={selectedBot}
+        botsLoading={botsLoading}
+        onSelectBot={selectBot}
+        onRefreshBots={() => void loadBots()}
+      />
     ) : page === "plugins" ? (
       <PluginsPage key={reloadKey} />
     ) : page === "config" ? (
@@ -516,8 +696,8 @@ function Shell({
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background shadow-[0_0_18px_-6px_rgb(0_0_0/0.14)] lg:rounded-tl-2xl">
-        <header className="flex h-16 min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background/90 px-2 backdrop-blur min-[360px]:px-3 sm:px-5 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+        <header className="flex h-16 min-w-0 shrink-0 items-center justify-between gap-1.5 border-b border-border/60 bg-background/90 px-1.5 backdrop-blur min-[360px]:px-2 sm:px-4 lg:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -537,7 +717,7 @@ function Shell({
             >
               {sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
             </Button>
-            <div className="min-w-0">
+            <div className="hidden min-w-0 md:block">
               <h1 className="truncate text-base font-semibold">
                 {current.label}
               </h1>
@@ -545,6 +725,7 @@ function Shell({
                 {current.detail}
               </p>
             </div>
+            <BotSelector bots={bots} value={selectedBot} loading={botsLoading} onChange={selectBot} />
           </div>
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
             <span className="mr-1 hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
@@ -552,6 +733,22 @@ function Shell({
               已连接
             </span>
             <Button
+              className="hidden sm:inline-flex"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                const next = resolvedDark ? "light" : "dark";
+                setAppearanceMode(next);
+                window.localStorage.setItem("elaina_appearance_mode", next);
+              }}
+              aria-label="切换深浅色模式"
+              title="切换深浅色模式"
+            >
+              {resolvedDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
+            <ThemeColorPicker value={colorTheme} onChange={selectColorTheme} />
+            <Button
+              className="hidden min-[430px]:inline-flex"
               variant="ghost"
               size="icon"
               onClick={refresh}
@@ -598,6 +795,11 @@ export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [page, navigate] = usePage();
   useEffect(() => {
+    applyColorTheme(storedColorTheme());
+    const savedAppearance = window.localStorage.getItem("elaina_appearance_mode");
+    const dark = savedAppearance === "dark" || (savedAppearance !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.classList.toggle("light", !dark);
     api("/api/auth/check")
       .then(() => setAuthed(true))
       .catch(() => setAuthed(false));

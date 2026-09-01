@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAppDialog } from "@/components/ui/app-dialog";
+import { useToast } from "@/components/ui/toast";
 import {
   Sheet,
   SheetContent,
@@ -695,12 +696,13 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
 }
 
 export function BotsPage({ compact = false }: { compact?: boolean }) {
+  const toast = useToast();
   const [bots, setBots] = useState<ApiData[]>([]);
   const [versions, setVersions] = useState<ApiData[]>([]);
   const [qqStatus, setQqStatus] = useState<ApiData>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({
     bot_id: "",
     nickname: "",
@@ -731,9 +733,9 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
           nextVersions.find((item: ApiData) => item.compatible)?.key ||
           "",
       }));
-      setNotice("");
+      setLoadError("");
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "账号信息读取失败");
+      setLoadError(cause instanceof Error ? cause.message : "账号信息读取失败");
     } finally {
       setLoading(false);
     }
@@ -745,7 +747,7 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
 
   const create = async () => {
     if (!form.bot_id.trim()) {
-      setNotice("请输入账号标识");
+      toast("请输入账号标识", { variant: "error" });
       return;
     }
     setBusy("create");
@@ -756,8 +758,11 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
       });
       setForm((value) => ({ ...value, bot_id: "", nickname: "", uin: "" }));
       await load();
+      toast("账号已创建");
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "创建失败");
+      toast(cause instanceof Error ? cause.message : "创建失败", {
+        variant: "error",
+      });
     } finally {
       setBusy("");
     }
@@ -781,8 +786,19 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
         body: JSON.stringify({ bot_id: botId, cleanup_data: false }),
       });
       await load();
+      toast(
+        action === "delete"
+          ? "账号已删除"
+          : action === "start"
+            ? "账号已启动"
+            : action === "stop"
+              ? "账号已停止"
+              : "二维码已刷新",
+      );
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "操作失败");
+      toast(cause instanceof Error ? cause.message : "操作失败", {
+        variant: "error",
+      });
     } finally {
       setBusy("");
     }
@@ -805,8 +821,11 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
         body: JSON.stringify(body),
       });
       await load();
+      toast(endpoint === "version" ? "QQ 版本已保存" : "快捷登录设置已保存");
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "保存失败");
+      toast(cause instanceof Error ? cause.message : "保存失败", {
+        variant: "error",
+      });
     } finally {
       setBusy("");
     }
@@ -827,10 +846,12 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
         method: "POST",
         body: JSON.stringify({ version_key: versionKey, auto_download: true }),
       });
-      setNotice(String(result.message || result.job?.message || "任务已提交"));
+      toast(String(result.message || result.job?.message || "任务已提交"));
       await load();
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "QQ 客户端操作失败");
+      toast(cause instanceof Error ? cause.message : "QQ 客户端操作失败", {
+        variant: "error",
+      });
     } finally {
       setBusy("");
     }
@@ -853,9 +874,9 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
           detail="管理 QQ 账号与内置运行时"
         />
       )}
-      {notice && (
+      {loadError && (
         <div className="rounded-lg border border-border/60 bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          {notice}
+          {loadError}
         </div>
       )}
       <Card>
