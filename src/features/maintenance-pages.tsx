@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -6,8 +6,10 @@ import {
   ChevronRight,
   Database,
   Download,
+  Gauge,
   GitCommit,
   Globe2,
+  Loader2,
   Play,
   RefreshCw,
   Table2,
@@ -38,6 +40,8 @@ import {
 } from "@/features/shared";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+
+const GITHUB_DIRECT_MIRROR = "__github_direct__";
 
 export function DatabasePage() {
   const dialog = useAppDialog();
@@ -440,6 +444,10 @@ export function UpdatePage() {
   const [progress, setProgress] = useState<ApiData | null>(null);
   const [mirrors, setMirrors] = useState<string[]>([]);
   const [mirror, setMirror] = useState("");
+  const [githubDirectMirror, setGithubDirectMirror] = useState(GITHUB_DIRECT_MIRROR);
+  const [mirrorResults, setMirrorResults] = useState<ApiData[]>([]);
+  const [testingMirrors, setTestingMirrors] = useState(false);
+  const mirrorSource = useRef<EventSource | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [skipBackup, setSkipBackup] = useState(false);
   const [uploadVersion, setUploadVersion] = useState("");
@@ -459,9 +467,12 @@ export function UpdatePage() {
         setLogs(Array.isArray(l.data) ? l.data : []);
         setMirrors(Array.isArray(m.data?.mirrors) ? m.data.mirrors : []);
         setMirror(String(m.data?.custom_mirror || ""));
+        setGithubDirectMirror(String(m.data?.github_direct_mirror || GITHUB_DIRECT_MIRROR));
+        setMirrorResults(Array.isArray(m.data?.fast_mirrors) ? m.data.fast_mirrors : []);
       })
       .catch((error) => toast(errorMessage(error, "版本信息读取失败"), { variant: "error" }));
   }, []);
+  useEffect(() => () => mirrorSource.current?.close(), []);
   useEffect(() => {
     const poll = () =>
       api<ApiData>("/api/update/progress")
@@ -482,6 +493,39 @@ export function UpdatePage() {
     } catch (error) {
       toast(errorMessage(error, "镜像保存失败"), { variant: "error" });
     }
+  };
+  const testMirrors = () => {
+    if (testingMirrors) return;
+    mirrorSource.current?.close();
+    setTestingMirrors(true);
+    setMirrorResults([]);
+    const source = new EventSource("/api/update/test-mirrors");
+    mirrorSource.current = source;
+    let completed = false;
+    source.onmessage = (event) => {
+      try {
+        const result = JSON.parse(event.data) as ApiData;
+        if (result.done) {
+          completed = true;
+          source.close();
+          mirrorSource.current = null;
+          setTestingMirrors(false);
+          return;
+        }
+        setMirrorResults((current) => {
+          const next = [...current.filter((item) => String(item.mirror || "") !== String(result.mirror || "")), result];
+          return next.sort((a, b) => Number(!a.success) - Number(!b.success) || Number(a.latency || 99) - Number(b.latency || 99));
+        });
+      } catch {
+        // 忽略单条损坏事件，等待测速流结束。
+      }
+    };
+    source.onerror = () => {
+      source.close();
+      mirrorSource.current = null;
+      setTestingMirrors(false);
+      if (!completed) toast("镜像测速连接中断", { variant: "error" });
+    };
   };
   const start = async (targetVersion = "") => {
     if (
@@ -563,9 +607,11 @@ export function UpdatePage() {
   const stage = String(progress?.stage || progress?.status || "idle");
   const stageLabel = stageLabels[stage] || stage;
   const mirrorLabel = (value: string) => {
-    if (!value) return "GitHub 直连";
+    if (value === githubDirectMirror) return "GitHub 直连";
+    if (!value) return "自动选择最快镜像";
     try { return new URL(value).hostname; } catch { return value; }
   };
+  const mirrorResultLabel = (value: string) => value ? mirrorLabel(value) : "GitHub 直连";
 
   return (
     <section className="space-y-4 pt-2 sm:space-y-6 sm:pt-3">
@@ -592,7 +638,7 @@ export function UpdatePage() {
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card className="min-w-0"><CardHeader className="flex-row items-start justify-between gap-3"><div><CardTitle>更新日志</CardTitle><CardDescription>{logs.length} 条记录</CardDescription></div><Button size="icon" variant="ghost" title="刷新页面以重新获取更新日志" onClick={() => window.location.reload()}><RefreshCw className="size-4" /></Button></CardHeader><CardContent className="max-h-[560px] space-y-0 overflow-y-auto overscroll-contain">{logs.length ? logs.slice(0, 40).map((item, index) => <div key={String(item.sha || index)} className="border-b py-3 first:pt-0 last:border-0"><div className="flex flex-wrap items-center gap-2"><code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-primary">{String(item.sha || "--------")}</code><span className="text-[11px] text-muted-foreground">{String(item.date || "")}</span></div><p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5">{String(item.message || "变更")}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{String(item.author || "未知作者")}</span><Button size="sm" variant="outline" disabled={busy || updating || !item.full_sha} onClick={() => start(String(item.full_sha || item.sha || ""))}>更新到此版本</Button></div></div>) : <Notice text="暂无更新日志" />}</CardContent></Card>
 
-        <div className="min-w-0 space-y-4"><Card><CardHeader><div className="flex items-center gap-2"><Globe2 className="size-4 text-primary" /><CardTitle>镜像选择</CardTitle></div><CardDescription>当前：{mirrorLabel(mirror)}</CardDescription></CardHeader><CardContent className="space-y-3"><SelectBox value={mirror} onChange={saveMirror} className="w-full"><option value="">自动选择最快镜像</option>{mirrors.map((value) => <option key={value} value={value}>{mirrorLabel(value)}</option>)}</SelectBox><p className="break-all text-xs text-muted-foreground">{mirror || "未固定镜像，更新时自动选择可用线路。"}</p><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={skipBackup} onChange={(event) => setSkipBackup(event.target.checked)} />在线更新时跳过备份</label><Button className="w-full" disabled={busy || updating} onClick={() => start()}><Download className="size-3.5" />开始在线更新</Button></CardContent></Card>
+        <div className="min-w-0 space-y-4"><Card><CardHeader className="flex-row items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><Globe2 className="size-4 text-primary" /><CardTitle>镜像选择</CardTitle></div><CardDescription>当前：{mirrorLabel(mirror)}</CardDescription></div><Button size="sm" variant="outline" onClick={testMirrors} disabled={testingMirrors || updating} title="测试所有下载线路"><Gauge className="size-3.5" />{testingMirrors ? "测速中" : "测速"}</Button></CardHeader><CardContent className="space-y-3"><SelectBox value={mirror} onChange={saveMirror} className="w-full"><option value="">自动选择最快镜像</option><option value={githubDirectMirror}>GitHub 直连</option>{mirrors.filter((value) => value !== githubDirectMirror).map((value) => <option key={value} value={value}>{mirrorLabel(value)}</option>)}</SelectBox><p className="break-all text-xs text-muted-foreground">{mirror ? `已固定线路：${mirrorResultLabel(mirror)}` : "未固定线路，更新时自动选择测速最快的可用镜像。"}</p><div className="rounded-md border border-border/60 bg-muted/20 p-2.5"><div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium"><span>线路测速结果</span>{testingMirrors && <span className="flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin" />实时更新</span>}</div>{mirrorResults.length ? <div className="max-h-52 space-y-1 overflow-y-auto pr-1">{mirrorResults.map((item) => { const name = mirrorResultLabel(String(item.mirror || "")); const latency = Number(item.latency); return <div key={String(item.mirror || "github-direct")} className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 shrink-0 rounded-full", item.success ? "bg-emerald-500" : "bg-destructive")} /><span className="min-w-0 flex-1 truncate" title={name}>{name}</span><span className={cn("shrink-0 tabular-nums", item.success ? "text-muted-foreground" : "text-destructive")}>{item.success && Number.isFinite(latency) ? `${Math.round(latency * 1000)} ms` : "不可用"}</span></div>; })}</div> : <Notice text={testingMirrors ? "正在测试下载线路..." : "尚未测速，点击“测速”检查线路延迟。"} />}</div><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={skipBackup} onChange={(event) => setSkipBackup(event.target.checked)} />在线更新时跳过备份</label><Button className="w-full" disabled={busy || updating} onClick={() => start()}><Download className="size-3.5" />开始在线更新</Button></CardContent></Card>
 
           <Card><CardHeader><CardTitle>本地更新包</CardTitle><CardDescription>上传 ZIP 包并应用到当前框架</CardDescription></CardHeader><CardContent className="space-y-3"><label className="block"><input className="hidden" type="file" accept=".zip" onChange={(event) => setFile(event.target.files?.[0] || null)} /><Button asChild variant="outline" className="w-full"><span className="min-w-0"><Upload className="size-3.5" /><span className="truncate">{file?.name || "选择 ZIP 更新包"}</span></span></Button></label><Input value={uploadVersion} onChange={(event) => setUploadVersion(event.target.value)} placeholder="版本名称（可选）" /><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={uploadSkipBackup} onChange={(event) => setUploadSkipBackup(event.target.checked)} />本地更新时跳过备份</label><Button className="w-full" disabled={!file || busy || updating} onClick={upload}>上传并更新</Button></CardContent></Card></div>
       </div>
