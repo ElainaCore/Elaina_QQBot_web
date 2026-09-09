@@ -473,7 +473,7 @@ export function OverviewPage({ navigate }: { navigate: (page: Page) => void }) {
                 <p className="text-xs text-muted-foreground">QQ 机器人框架</p>
               </div>
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">面板提供 QQ 注入、内置 QQ、OneBot、消息、插件和维护管理能力。</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">面板提供 QQ 账号、内置 QQ、OneBot、消息、插件和维护管理能力。</p>
           </CardContent>
         </Card>
         <Card>
@@ -506,7 +506,7 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
       !item.managed &&
       kind === "start" &&
       !Boolean(
-        `向已登录的 QQ 进程 PID ${item.pid} 注入 ElainaBot 运行时？`,
+        `连接已登录的 QQ 进程 PID ${item.pid}？`,
       )
     )
       return;
@@ -534,7 +534,7 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
     ["已发现", list.length],
     ["受管账号", list.filter((item: ApiData) => item.managed).length],
     [
-      "可注入",
+      "可连接",
       list.filter((item: ApiData) => !item.managed && item.can_load).length,
     ],
     [
@@ -549,8 +549,8 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <Heading
           icon={PlugZap}
-          title="进程注入"
-          detail="使用 Python 查找已登录的 QQ，按需加载 ElainaBot 运行时"
+          title="QQ 进程"
+          detail="查找已登录的 QQ 并连接账号"
         />
       )}
       <div className="grid gap-3 sm:grid-cols-4">
@@ -569,8 +569,7 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
           <div>
             <CardTitle>QQ 进程</CardTitle>
             <CardDescription>
-              请先自行安装并登录 QQ，再选择对应进程注入。发现进程不需要
-              Node，也不会关闭或重启 QQ。
+              请先安装并登录 QQ，再选择对应进程连接。不会关闭或重启 QQ。
             </CardDescription>
           </div>
           <Button
@@ -662,7 +661,7 @@ export function ProcessesPage({ compact = false }: { compact?: boolean }) {
                       ) : (
                         <Zap className="size-3.5" />
                       )}
-                      {item.managed ? "启动" : "注入"}
+                      {item.managed ? "启动" : "连接"}
                     </Button>
                   )}
                   {item.can_unload && (
@@ -999,7 +998,6 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
                       <span className="text-muted-foreground">运行信息</span>
                       <p className="mt-1 truncate font-medium">
                         {bot.pid ? `PID ${bot.pid}` : "未运行"}
-                        {bot.bridge_port ? ` · ${bot.bridge_port}` : ""}
                       </p>
                     </div>
                   </div>
@@ -1105,7 +1103,7 @@ export function BotsPage({ compact = false }: { compact?: boolean }) {
             <CardContent className="p-10">
               <Empty
                 icon={Bot}
-                text="还没有内置 QQ 账号，可在上方创建，或在 QQ 进程页签手动注入已登录的 QQ。"
+                text="还没有内置 QQ 账号，可在上方创建，或在 QQ 进程页签连接已登录的 QQ。"
               />
             </CardContent>
           </Card>
@@ -1407,7 +1405,7 @@ export function SettingsPage() {
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground">
               本面板采用 SnowLuma WebUI 的 React/Tailwind 结构重构，并针对
-              ElainaBot 的 QQ 进程注入与 OneBot 接口进行了适配。
+              ElainaBot 的 QQ 账号与 OneBot 接口进行了适配。
             </p>
             <p className="text-xs text-muted-foreground">
               © {new Date().getFullYear()} Elaina Core. All rights reserved.

@@ -43,6 +43,7 @@ import { api, type ApiData } from "@/api";
 import { applyColorTheme, COLOR_THEMES, storedColorTheme, type ColorThemeName } from "@/theme-colors";
 import { OverviewPage } from "@/pages";
 import { AccessCenterPage } from "@/access-page";
+import { QLinuxPage } from "@/qlinux-page";
 import { LogsPage } from "@/features/admin-pages";
 import {
   ConfigPage,
@@ -57,6 +58,7 @@ import {
 export type Page =
   | "overview"
   | "access"
+  | "qlinux"
   | "messages"
   | "plugins"
   | "config"
@@ -97,6 +99,12 @@ const navigation: Array<{
     label: "接入中心",
     detail: "QQ 账号与 OneBot 接入",
     icon: PlugZap,
+  },
+  {
+    id: "qlinux",
+    label: "QLinux 协议端",
+    detail: "Lagrange 多账号 · 扫码/账密登录",
+    icon: Monitor,
   },
   {
     id: "logs",
@@ -633,6 +641,8 @@ function Shell({
       <OverviewPage key={reloadKey} navigate={navigate} />
     ) : page === "access" ? (
       <AccessCenterPage key={reloadKey} />
+    ) : page === "qlinux" ? (
+      <QLinuxPage key={reloadKey} />
     ) : page === "messages" ? (
       <MessagesPage
         key={reloadKey}

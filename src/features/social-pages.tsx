@@ -438,7 +438,7 @@ export function MessagesPage({
               <span>PB 原始数据</span>
               {pb && <><span>{String(pb.encoding || "hex").toUpperCase()}</span><span>{Number(pb.byte_length || 0).toLocaleString()} 字节</span>{pb.command && <span className="min-w-0 break-all font-normal">{String(pb.command)}</span>}</>}
             </div>
-            {pb ? <pre className="max-h-[32dvh] max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-200">{rawPbText(pb) || "PB 数据为空"}</pre> : <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">该消息来源未提供 PB 原始数据。注入 QQ 接收的新消息会在这里显示 PB；OneBot 接入是否提供取决于上游实现。</p>}
+            {pb ? <pre className="max-h-[32dvh] max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-200">{rawPbText(pb) || "PB 数据为空"}</pre> : <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">该消息来源未提供 PB 原始数据。已连接的 QQ 新消息会在这里显示 PB；OneBot 接入是否提供取决于上游实现。</p>}
           </div>
         </div>;
         })()}

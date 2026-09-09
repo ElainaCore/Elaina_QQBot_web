@@ -139,6 +139,13 @@ const visualConfigGroups: Array<{
       },
       {
         section: "embedded_qq",
+        key: "self_message_enabled",
+        label: "接收自身消息",
+        kind: "boolean",
+        detail: "把本账号发出的消息回显给插件（message_sent 事件）",
+      },
+      {
+        section: "embedded_qq",
         key: "swap_reclaim",
         label: "主动回收交换区",
         kind: "boolean",
@@ -147,7 +154,7 @@ const visualConfigGroups: Array<{
       {
         section: "embedded_qq",
         key: "bridge_port_start",
-        label: "桥接起始端口",
+        label: "账号服务端口起点",
         kind: "number",
         min: 1,
         max: 65535,
@@ -707,6 +714,155 @@ export function ConnectionsPage({
   );
 }
 
+type PluginThemeMode = "light" | "dark";
+
+function readThemeValue(style: CSSStyleDeclaration, ...names: string[]) {
+  for (const name of names) {
+    const value = style.getPropertyValue(name).trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function getPluginThemeMode(style: CSSStyleDeclaration): PluginThemeMode {
+  const root = document.documentElement;
+  if (root.classList.contains("dark") || root.dataset.theme === "dark") return "dark";
+  if (root.classList.contains("light") || root.dataset.theme === "light") return "light";
+  const declared = String(style.colorScheme || "").toLowerCase();
+  if (declared.includes("dark")) return "dark";
+  if (declared.includes("light")) return "light";
+  return "light";
+}
+
+function syncPluginFrameTheme(frameDocument: Document) {
+  const root = frameDocument.documentElement;
+  if (!root) return null;
+
+  const host = getComputedStyle(document.documentElement);
+  const mode = getPluginThemeMode(host);
+  const background = readThemeValue(host, "--background", "--bg");
+  const card = readThemeValue(host, "--card", "--popover", "--background");
+  const popover = readThemeValue(host, "--popover", "--card", "--background");
+  const secondary = readThemeValue(host, "--secondary", "--muted", "--background");
+  const foreground = readThemeValue(host, "--foreground", "--card-foreground");
+  const mutedForeground = readThemeValue(host, "--muted-foreground", "--secondary-foreground", "--foreground");
+  const border = readThemeValue(host, "--border", "--input");
+  // Legacy panels treat --accent as a solid action color while the new UI
+  // uses it as a soft surface, so keep both meanings in separate aliases.
+  const primary = readThemeValue(host, "--primary", "--sidebar-primary", "--accent-foreground", "--accent");
+  const primaryForeground = readThemeValue(host, "--primary-foreground", "--sidebar-primary-foreground", "--background");
+  const accentSoft = readThemeValue(host, "--accent", "--sidebar-accent", "--secondary");
+  const sidebar = readThemeValue(host, "--sidebar", "--background");
+  const success = readThemeValue(host, "--success", "--green", "--primary");
+  const danger = readThemeValue(host, "--destructive", "--danger", "--red");
+  const warning = readThemeValue(host, "--warning", "--amber", "--primary");
+  const info = readThemeValue(host, "--info", "--sky", "--primary");
+
+  const cardLayout = Boolean(frameDocument.querySelector(".eb-page"));
+  const legacyBackground = cardLayout ? card : background;
+  const legacyBackground2 = cardLayout ? background : secondary;
+  const variables: Record<string, string> = {
+    "--background": background,
+    "--foreground": foreground,
+    "--card": card,
+    "--card-foreground": readThemeValue(host, "--card-foreground", "--foreground"),
+    "--popover": popover,
+    "--popover-foreground": readThemeValue(host, "--popover-foreground", "--foreground"),
+    "--primary": primary,
+    "--primary-foreground": primaryForeground,
+    "--secondary": secondary,
+    "--secondary-foreground": readThemeValue(host, "--secondary-foreground", "--foreground"),
+    "--muted": mutedForeground,
+    "--muted-foreground": mutedForeground,
+    "--accent": primary,
+    "--accent-foreground": readThemeValue(host, "--accent-foreground", "--primary"),
+    "--destructive": danger,
+    "--border": border,
+    "--input": readThemeValue(host, "--input", "--border"),
+    "--ring": readThemeValue(host, "--ring", "--primary"),
+    "--sidebar": sidebar,
+    "--sidebar-foreground": readThemeValue(host, "--sidebar-foreground", "--foreground"),
+    "--sidebar-primary": readThemeValue(host, "--sidebar-primary", "--primary"),
+    "--sidebar-primary-foreground": readThemeValue(host, "--sidebar-primary-foreground", "--primary-foreground"),
+    "--sidebar-accent": readThemeValue(host, "--sidebar-accent", "--accent"),
+    "--sidebar-accent-foreground": readThemeValue(host, "--sidebar-accent-foreground", "--accent-foreground"),
+    "--sidebar-border": readThemeValue(host, "--sidebar-border", "--border"),
+    "--bg": legacyBackground,
+    "--bg2": legacyBackground2,
+    "--bg3": secondary,
+    "--bg-float": popover,
+    "--page": background,
+    "--soft": secondary,
+    "--float": popover,
+    "--surface": card,
+    "--surface-2": secondary,
+    "--solid": card,
+    "--deep": secondary,
+    "--side": sidebar,
+    "--sidebar-bg": sidebar,
+    "--text": foreground,
+    "--text2": mutedForeground,
+    "--text3": mutedForeground,
+    "--ink": foreground,
+    "--ink2": mutedForeground,
+    "--line": border,
+    "--line2": border,
+    "--border2": border,
+    "--divider": border,
+    "--accent-hover": primary,
+    "--accent-light": primary,
+    "--accent-soft": accentSoft,
+    "--accent-line": border,
+    "--brand": primary,
+    "--brand2": primary,
+    "--brand-soft": accentSoft,
+    "--p": primary,
+    "--pd": primary,
+    "--pl": primary,
+    "--green": success,
+    "--success": success,
+    "--ok": success,
+    "--red": danger,
+    "--danger": danger,
+    "--amber": warning,
+    "--warning": warning,
+    "--warn": warning,
+    "--blue": info,
+    "--info": info,
+    "--host-color-scheme": mode,
+    "--host-bg": background,
+    "--host-bg2": card,
+    "--host-bg3": secondary,
+    "--host-bg-float": popover,
+    "--host-text": foreground,
+    "--host-text2": mutedForeground,
+    "--host-text3": mutedForeground,
+    "--host-border": border,
+    "--host-accent": primary,
+    "--host-accent-hover": primary,
+    "--host-accent-light": primary,
+    "--host-accent-soft": accentSoft,
+    "--host-success": success,
+    "--host-danger": danger,
+    "--host-warning": warning,
+    "--host-info": info,
+  };
+
+  const css = `:root{${Object.entries(variables)
+    .filter(([, value]) => value)
+    .map(([name, value]) => `${name}:${value} !important;`)
+    .join("")}color-scheme:${mode} !important;}html,body{color-scheme:${mode} !important;}`;
+  let style = frameDocument.querySelector<HTMLStyleElement>("#elaina-plugin-theme-bridge");
+  if (!style) {
+    style = frameDocument.createElement("style");
+    style.id = "elaina-plugin-theme-bridge";
+    (frameDocument.head || root).appendChild(style);
+  }
+  if (style.textContent !== css) style.textContent = css;
+  root.dataset.hostTheme = mode;
+  return style;
+}
+
 export function ExtensionsPage({
   pages,
   selectedKey,
@@ -739,36 +895,11 @@ export function ExtensionsPage({
       frameDocument.body.style.minWidth = "0";
       frameDocument.body.style.maxWidth = "100%";
     }
-    const themeProperties = [
-      "--bg",
-      "--side",
-      "--card",
-      "--solid",
-      "--deep",
-      "--text",
-      "--text2",
-      "--muted",
-      "--line",
-      "--divider",
-    ];
-    let adjusting = false;
-    const forceLight = () => {
-      if (adjusting) return;
-      adjusting = true;
-      if (root.dataset.theme !== "light") root.dataset.theme = "light";
-      if (root.style.colorScheme !== "light") root.style.colorScheme = "light";
-      themeProperties.forEach((property) => {
-        if (root.style.getPropertyValue(property)) root.style.removeProperty(property);
-      });
-      adjusting = false;
-    };
-    forceLight();
-    const observer = new MutationObserver(forceLight);
-    observer.observe(root, {
-      attributes: true,
-      attributeFilter: ["data-theme", "style"],
-    });
-    frameCleanup.current = () => observer.disconnect();
+    syncPluginFrameTheme(frameDocument);
+    const syncTimer = window.setInterval(() => {
+      if (frameDocument.defaultView) syncPluginFrameTheme(frameDocument);
+    }, 350);
+    frameCleanup.current = () => window.clearInterval(syncTimer);
   };
 
   const selected = pages.find((page) => String(page.key) === selectedKey);
