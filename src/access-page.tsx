@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  Monitor,
   MonitorSmartphone,
   Network,
   PackageCheck,
@@ -28,10 +29,11 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useToast } from "@/components/ui/toast";
 import { ConnectionsPage } from "@/features/basic-pages";
+import { QLinuxPage } from "@/qlinux-page";
 import { cn } from "@/lib/utils";
 
 type Icon = ComponentType<{ className?: string }>;
-type AccessView = "accounts" | "onebot";
+type AccessView = "accounts" | "onebot" | "qlinux";
 type AddStep = "choose" | "qq";
 
 function statusText(bot: ApiData) {
@@ -221,6 +223,7 @@ export function AccessCenterPage() {
         <div className="inline-flex h-10 shrink-0 items-center rounded-lg border border-border/70 bg-muted/40 p-1">
           <button type="button" onClick={() => setView("accounts")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "accounts" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Bot className="size-3.5" />QQ 账号 <span className="tabular-nums">{bots.length}</span></button>
           <button type="button" onClick={() => setView("onebot")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "onebot" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Network className="size-3.5" />OneBot 接入</button>
+          <button type="button" onClick={() => setView("qlinux")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "qlinux" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Monitor className="size-3.5" />QLinux 协议端</button>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={cn("size-3.5", loading && "animate-spin")} />刷新</Button>
@@ -230,7 +233,7 @@ export function AccessCenterPage() {
 
       {loadError && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{loadError}</div>}
 
-      {view === "onebot" ? <ConnectionsPage compact createSignal={connectionSignal} /> : (
+      {view === "onebot" ? <ConnectionsPage compact createSignal={connectionSignal} /> : view === "qlinux" ? <QLinuxPage /> : (
         <>
           {loading ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />加载账号</div> : bots.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
