@@ -453,6 +453,7 @@ export function UpdatePage() {
   const [uploadVersion, setUploadVersion] = useState("");
   const [uploadSkipBackup, setUploadSkipBackup] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -472,6 +473,20 @@ export function UpdatePage() {
       })
       .catch((error) => toast(errorMessage(error, "版本信息读取失败"), { variant: "error" }));
   }, []);
+
+  const checkNow = async () => {
+    if (checking || busy || updating) return;
+    setChecking(true);
+    try {
+      const result = await api<ApiData>("/api/update/check");
+      setCheck(result.data || result);
+      toast(String((result.data || result).has_update ? "发现新版本" : "当前已是最新版本"));
+    } catch (error) {
+      toast(errorMessage(error, "更新检查失败"), { variant: "error" });
+    } finally {
+      setChecking(false);
+    }
+  };
   useEffect(() => () => mirrorSource.current?.close(), []);
   useEffect(() => {
     const poll = () =>
@@ -615,11 +630,17 @@ export function UpdatePage() {
 
   return (
     <section className="space-y-4 pt-2 sm:space-y-6 sm:pt-3">
-      <FeatureHeading
-        icon={WandSparkles}
-        title="框架更新"
-        detail="检查版本、查看更新日志并选择在线或本地更新"
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FeatureHeading
+          icon={WandSparkles}
+          title="框架更新"
+          detail="检查版本、查看更新日志并选择在线或本地更新"
+        />
+        <Button variant="outline" onClick={() => void checkNow()} disabled={checking || busy || updating} title="检查最新版本">
+          <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+          {checking ? "检查中" : "检查更新"}
+        </Button>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "当前版本", value: currentVersion, Icon: Download },
