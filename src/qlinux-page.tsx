@@ -27,6 +27,9 @@ type Icon = ComponentType<{ className?: string }>;
 const STATUS_LABELS: Record<string, string> = {
   online: "在线",
   offline: "离线",
+  reconnecting: "自动重连中",
+  resume_pending: "待恢复",
+  login_failed: "登录失败",
   waiting_scan: "等待扫码",
   confirming: "手机确认中",
   password_login: "账密登录中",
@@ -39,6 +42,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 function statusVariant(status: string): "success" | "warning" | "secondary" | "destructive" {
   if (status === "online") return "success";
+  if (["reconnecting", "resume_pending"].includes(status)) return "warning";
+  if (["offline", "login_failed"].includes(status)) return "destructive";
   if (["waiting_scan", "confirming", "password_login", "captcha", "sms", "new_device"].includes(status)) return "warning";
   if (["qr_canceled", "qr_expired"].includes(status)) return "destructive";
   return "secondary";
@@ -238,6 +243,12 @@ export function QLinuxPage() {
                       {STATUS_LABELS[status] || status}
                     </Badge>
                   </div>
+
+                  {account.last_error && (
+                    <div className="mt-3 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                      {String(account.last_error)}
+                    </div>
+                  )}
 
                   {qrActive ? (
                     <div className="mt-4 flex items-center gap-3 rounded-lg border border-border/70 p-3">
