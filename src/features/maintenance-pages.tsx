@@ -9,6 +9,7 @@ import {
   Gauge,
   GitCommit,
   Globe2,
+  Github,
   Loader2,
   Play,
   RefreshCw,
@@ -454,25 +455,48 @@ export function UpdatePage() {
   const [uploadSkipBackup, setUploadSkipBackup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api<ApiData>("/api/update/version"),
-      api<ApiData>("/api/update/check"),
-      api<ApiData>("/api/update/changelog"),
-      api<ApiData>("/api/update/mirrors"),
-    ])
-      .then(([v, c, l, m]) => {
-        setVersion(v.data || v);
-        setCheck(c.data || c);
-        setLogs(Array.isArray(l.data) ? l.data : []);
-        setMirrors(Array.isArray(m.data?.mirrors) ? m.data.mirrors : []);
-        setMirror(String(m.data?.custom_mirror || ""));
-        setGithubDirectMirror(String(m.data?.github_direct_mirror || GITHUB_DIRECT_MIRROR));
-        setMirrorResults(Array.isArray(m.data?.fast_mirrors) ? m.data.fast_mirrors : []);
+    let active = true;
+    api<ApiData>("/api/update/version")
+      .then((data) => active && setVersion(data.data || data))
+      .catch((error) => active && toast(errorMessage(error, "当前版本读取失败"), { variant: "error" }));
+    api<ApiData>("/api/update/changelog")
+      .then((data) => active && setLogs(Array.isArray(data.data) ? data.data : []))
+      .catch((error) => active && toast(errorMessage(error, "更新日志读取失败"), { variant: "error" }));
+    api<ApiData>("/api/update/mirrors")
+      .then((data) => {
+        if (!active) return;
+        setMirrors(Array.isArray(data.data?.mirrors) ? data.data.mirrors : []);
+        setMirror(String(data.data?.custom_mirror || ""));
+        setGithubDirectMirror(String(data.data?.github_direct_mirror || GITHUB_DIRECT_MIRROR));
+        setMirrorResults(Array.isArray(data.data?.fast_mirrors) ? data.data.fast_mirrors : []);
       })
-      .catch((error) => toast(errorMessage(error, "版本信息读取失败"), { variant: "error" }));
+      .catch((error) => active && toast(errorMessage(error, "镜像信息读取失败"), { variant: "error" }));
+    api<ApiData>("/api/update/check")
+      .then((data) => active && setCheck(data.data || data))
+      .catch((error) => active && toast(errorMessage(error, "更新检查失败"), { variant: "error" }));
+    return () => { active = false; };
   }, []);
+
+  const refreshLogs = async () => {
+    if (loadingLogs || busy || updating) return;
+    setLoadingLogs(true);
+    try {
+      const [logResult, checkResult] = await Promise.all([
+        api<ApiData>("/api/update/changelog"),
+        api<ApiData>("/api/update/check"),
+      ]);
+      setLogs(Array.isArray(logResult.data) ? logResult.data : []);
+      setCheck(checkResult.data || checkResult);
+      toast(String((checkResult.data || checkResult).has_update ? "发现新版本" : "当前已是最新版本"));
+    } catch (error) {
+      toast(errorMessage(error, "更新信息刷新失败"), { variant: "error" });
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
 
   const checkNow = async () => {
     if (checking || busy || updating) return;
@@ -636,10 +660,6 @@ export function UpdatePage() {
           title="框架更新"
           detail="检查版本、查看更新日志并选择在线或本地更新"
         />
-        <Button variant="outline" onClick={() => void checkNow()} disabled={checking || busy || updating} title="检查最新版本">
-          <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
-          {checking ? "检查中" : "检查更新"}
-        </Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -657,7 +677,7 @@ export function UpdatePage() {
       {progress && stage !== "idle" && <Card><CardContent className="space-y-2 p-4 pt-4 sm:p-4 sm:pt-4"><div className="flex flex-wrap items-center justify-between gap-2 text-xs"><div className="flex items-center gap-2"><Badge variant={stage === "failed" ? "destructive" : stage === "completed" ? "success" : "default"}>{stageLabel}</Badge><span className="break-words text-muted-foreground">{String(progress.message || "等待更新状态")}</span></div><span>{Math.max(0, Math.min(100, percent)).toFixed(0)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full bg-primary transition-[width]", stage === "failed" && "bg-destructive", stage === "completed" && "bg-success")} style={{ width: Math.max(0, Math.min(100, percent)) + "%" }} /></div></CardContent></Card>}
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card className="min-w-0"><CardHeader className="flex-row items-start justify-between gap-3"><div><CardTitle>更新日志</CardTitle><CardDescription>{logs.length} 条记录</CardDescription></div><Button size="icon" variant="ghost" title="刷新页面以重新获取更新日志" onClick={() => window.location.reload()}><RefreshCw className="size-4" /></Button></CardHeader><CardContent className="max-h-[560px] space-y-0 overflow-y-auto overscroll-contain">{logs.length ? logs.slice(0, 40).map((item, index) => <div key={String(item.sha || index)} className="border-b py-3 first:pt-0 last:border-0"><div className="flex flex-wrap items-center gap-2"><code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-primary">{String(item.sha || "--------")}</code><span className="text-[11px] text-muted-foreground">{String(item.date || "")}</span></div><p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5">{String(item.message || "变更")}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{String(item.author || "未知作者")}</span><Button size="sm" variant="outline" disabled={busy || updating || !item.full_sha} onClick={() => start(String(item.full_sha || item.sha || ""))}>更新到此版本</Button></div></div>) : <Notice text="暂无更新日志" />}</CardContent></Card>
+        <Card className="min-w-0"><CardHeader className="flex-row items-start justify-between gap-3"><div><CardTitle>更新日志</CardTitle><CardDescription>{logs.length} 条记录</CardDescription></div><div className="flex items-center gap-1"><Button size="icon" variant="ghost" title="打开 GitHub 项目" aria-label="打开 GitHub 项目" onClick={() => window.open("https://github.com/ElainaCore/Elaina_QQBot", "_blank", "noopener,noreferrer")}><Github className="size-4" /></Button><Button size="icon" variant="ghost" title="刷新更新日志并检查更新" aria-label="刷新更新日志" onClick={() => void refreshLogs()} disabled={loadingLogs || busy || updating}><RefreshCw className={cn("size-4", loadingLogs && "animate-spin")} /></Button></div></CardHeader><CardContent className="max-h-[560px] space-y-0 overflow-y-auto overscroll-contain">{logs.length ? logs.slice(0, 40).map((item, index) => <div key={String(item.sha || index)} className="border-b py-3 first:pt-0 last:border-0"><div className="flex flex-wrap items-center gap-2"><code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-primary">{String(item.sha || "--------")}</code><span className="text-[11px] text-muted-foreground">{String(item.date || "")}</span></div><p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5">{String(item.message || "变更")}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{String(item.author || "未知作者")}</span><Button size="sm" variant="outline" disabled={busy || updating || !item.full_sha} onClick={() => start(String(item.full_sha || item.sha || ""))}>更新到此版本</Button></div></div>) : <Notice text="暂无更新日志" />}</CardContent></Card>
 
         <div className="min-w-0 space-y-4"><Card><CardHeader className="flex-row items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><Globe2 className="size-4 text-primary" /><CardTitle>镜像选择</CardTitle></div><CardDescription>当前：{mirrorLabel(mirror)}</CardDescription></div><Button size="sm" variant="outline" onClick={testMirrors} disabled={testingMirrors || updating} title="测试所有下载线路"><Gauge className="size-3.5" />{testingMirrors ? "测速中" : "测速"}</Button></CardHeader><CardContent className="space-y-3"><SelectBox value={mirror} onChange={saveMirror} className="w-full"><option value="">自动选择最快镜像</option><option value={githubDirectMirror}>GitHub 直连</option>{mirrors.filter((value) => value !== githubDirectMirror).map((value) => <option key={value} value={value}>{mirrorLabel(value)}</option>)}</SelectBox><p className="break-all text-xs text-muted-foreground">{mirror ? `已固定线路：${mirrorResultLabel(mirror)}` : "未固定线路，更新时自动选择测速最快的可用镜像。"}</p><div className="rounded-md border border-border/60 bg-muted/20 p-2.5"><div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium"><span>线路测速结果</span>{testingMirrors && <span className="flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin" />实时更新</span>}</div>{mirrorResults.length ? <div className="max-h-52 space-y-1 overflow-y-auto pr-1">{mirrorResults.map((item) => { const name = mirrorResultLabel(String(item.mirror || "")); const latency = Number(item.latency); return <div key={String(item.mirror || "github-direct")} className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 shrink-0 rounded-full", item.success ? "bg-emerald-500" : "bg-destructive")} /><span className="min-w-0 flex-1 truncate" title={name}>{name}</span><span className={cn("shrink-0 tabular-nums", item.success ? "text-muted-foreground" : "text-destructive")}>{item.success && Number.isFinite(latency) ? `${Math.round(latency * 1000)} ms` : "不可用"}</span></div>; })}</div> : <Notice text={testingMirrors ? "正在测试下载线路..." : "尚未测速，点击“测速”检查线路延迟。"} />}</div><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={skipBackup} onChange={(event) => setSkipBackup(event.target.checked)} />在线更新时跳过备份</label><Button className="w-full" disabled={busy || updating} onClick={() => start()}><Download className="size-3.5" />开始在线更新</Button></CardContent></Card>
 

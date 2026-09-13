@@ -31,6 +31,7 @@ import {
   Palette,
   PlugZap,
   RefreshCw,
+  RotateCw,
   Sparkles,
   Sun,
   Terminal,
@@ -38,6 +39,7 @@ import {
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { Button } from "@/components/ui/button";
+import { useAppDialog } from "@/components/ui/app-dialog";
 import { cn } from "@/lib/utils";
 import { api, type ApiData } from "@/api";
 import { applyColorTheme, COLOR_THEMES, storedColorTheme, type ColorThemeName } from "@/theme-colors";
@@ -519,7 +521,6 @@ function Shell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
   const [bots, setBots] = useState<ApiData[]>([]);
   const [botsLoading, setBotsLoading] = useState(true);
   const [selectedBot, setSelectedBot] = useState(() => window.localStorage.getItem("elainaqq_bot") || "");
@@ -536,6 +537,7 @@ function Shell({
   const [selectedExtension, setSelectedExtension] = useState(() => window.localStorage.getItem("elaina_extension_page") || "");
   const [extensionLoading, setExtensionLoading] = useState(true);
   const [extensionNotice, setExtensionNotice] = useState("");
+  const dialog = useAppDialog();
   const current = navigation.find((item) => item.id === page)!;
   const fullBleed = page === "extensions";
   const loadBots = useCallback(async (showLoading = true) => {
@@ -568,11 +570,13 @@ function Shell({
     window.localStorage.setItem("elainaqq_theme", value);
     applyColorTheme(value);
   };
-  const refresh = () => {
-    setRefreshing(true);
-    setReloadKey((value) => value + 1);
-    void loadBots(false);
-    window.setTimeout(() => setRefreshing(false), 450);
+  const restart = async () => {
+    if (!await dialog.confirm({ title: "重启框架", description: "重启 ElainaBot？Web 面板会短暂断开。", confirmLabel: "重启", destructive: true })) return;
+    try {
+      await api<ApiData>("/api/bot/restart", { method: "POST" });
+    } catch {
+      // 重启通常会立即断开连接，失败时不阻塞用户继续操作。
+    }
   };
   useEffect(() => {
     applyColorTheme(colorTheme);
@@ -751,13 +755,11 @@ function Shell({
               className="hidden min-[430px]:inline-flex"
               variant="ghost"
               size="icon"
-              onClick={refresh}
-              disabled={refreshing}
-              aria-label="刷新"
+              onClick={() => void restart()}
+              aria-label="重启框架"
+              title="重启框架"
             >
-              <RefreshCw
-                className={cn("size-4", refreshing && "animate-spin")}
-              />
+              <RotateCw className="size-4" />
             </Button>
             <Button
               variant="ghost"
