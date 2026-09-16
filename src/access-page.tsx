@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 type Icon = ComponentType<{ className?: string }>;
 type AccessView = "accounts" | "onebot" | "qlinux" | "injected" | "embedded";
 type AddStep = "choose" | "qq" | "hookqq";
+type EmbeddedForm = { bot_id: string; nickname: string; uin: string; qq_version_key: string; force_quick_login: boolean };
 
 function statusText(bot: ApiData) {
   if (bot.connected || bot.status === "online") return "在线";
@@ -84,6 +85,41 @@ function AccessMethod({ icon: MethodIcon, title, detail, onClick }: { icon: Icon
       <span className="min-w-0 flex-1"><strong className="block text-sm">{title}</strong><span className="mt-1 block text-xs leading-5 text-muted-foreground">{detail}</span></span>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </button>
+  );
+}
+
+function EmbeddedAccountForm({
+  form,
+  compatible,
+  busy,
+  windows,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  form: EmbeddedForm;
+  compatible: ApiData[];
+  busy: string;
+  windows: boolean;
+  onChange: (field: keyof EmbeddedForm, value: string | boolean) => void;
+  onSubmit: () => void;
+  onCancel?: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{windows ? "添加内置 HookQQ" : "添加内置 QQ"}</CardTitle>
+        <CardDescription>创建账号后可启动 QQ，通过二维码或快捷登录完成接入。</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="block space-y-1.5 text-sm"><span className="font-medium">账号标识</span><Input value={form.bot_id} onChange={(event) => onChange("bot_id", event.target.value)} placeholder="例如 bot1" /></label>
+        <label className="block space-y-1.5 text-sm"><span className="font-medium">显示名称</span><Input value={form.nickname} onChange={(event) => onChange("nickname", event.target.value)} placeholder="可选" /></label>
+        <label className="block space-y-1.5 text-sm"><span className="font-medium">QQ 号</span><Input value={form.uin} onChange={(event) => onChange("uin", event.target.value)} placeholder="可选，用于快捷登录" /></label>
+        <label className="block space-y-1.5 text-sm"><span className="font-medium">QQ 版本</span><select value={form.qq_version_key} onChange={(event) => onChange("qq_version_key", event.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">{compatible.map((item) => <option key={item.key} value={item.key}>{item.label} {item.version}</option>)}</select></label>
+        <div className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm"><div><p className="font-medium">快捷登录</p><p className="mt-1 text-xs text-muted-foreground">优先复用本地 QQ 登录会话</p></div><ToggleSwitch value={form.force_quick_login} onChange={(value) => onChange("force_quick_login", value)} ariaLabel="快捷登录" /></div>
+        <div className="flex justify-end gap-2 border-t pt-4">{onCancel && <Button variant="outline" onClick={onCancel}>取消</Button>}<Button onClick={onSubmit} disabled={busy === "create"}>{busy === "create" ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}创建账号</Button></div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -179,9 +215,10 @@ export function AccessCenterPage() {
   const [busy, setBusy] = useState("");
   const [loadError, setLoadError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [inlineEditorOpen, setInlineEditorOpen] = useState(false);
   const [addStep, setAddStep] = useState<AddStep>("choose");
   const [connectionSignal, setConnectionSignal] = useState(0);
-  const [form, setForm] = useState({ bot_id: "", nickname: "", uin: "", qq_version_key: "", force_quick_login: false });
+  const [form, setForm] = useState<EmbeddedForm>({ bot_id: "", nickname: "", uin: "", qq_version_key: "", force_quick_login: false });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -214,8 +251,10 @@ export function AccessCenterPage() {
   useEffect(() => { void load(); }, [load]);
 
   const openAdd = () => {
-    setAddStep("choose");
-    setAddOpen(true);
+    // Account creation belongs to the embedded QQ tab. Injection and OneBot
+    // remain separate tabs and should never be part of this add flow.
+    setView("embedded");
+    setInlineEditorOpen(true);
   };
 
   const chooseOneBot = () => {
@@ -231,6 +270,7 @@ export function AccessCenterPage() {
       await api("/api/embedded/bots", { method: "POST", body: JSON.stringify({ ...form, runtime_mode: windows ? "hookqq" : "embedded" }) });
       setForm((current) => ({ ...current, bot_id: "", nickname: "", uin: "" }));
       setAddOpen(false);
+      setInlineEditorOpen(false);
       toast(windows ? "内置 HookQQ 账号已创建" : "内置 QQ 账号已创建");
       await load();
     } catch (error) {
@@ -309,7 +349,7 @@ export function AccessCenterPage() {
       <div className="w-full overflow-x-auto pb-1">
         <div className="inline-flex h-10 min-w-max items-center rounded-lg border border-border/70 bg-muted/40 p-1">
           <button type="button" onClick={() => setView("accounts")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "accounts" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Bot className="size-3.5" />QQ 账号 <span className="tabular-nums">{bots.length}</span></button>
-          <button type="button" onClick={() => setView("onebot")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "onebot" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Network className="size-3.5" />OneBot 接入</button>
+          {windows && <button type="button" onClick={() => setView("onebot")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "onebot" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Network className="size-3.5" />OneBot 接入</button>}
           <button type="button" onClick={() => setView("qlinux")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "qlinux" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Monitor className="size-3.5" />QLinux 协议端</button>
           <button type="button" onClick={() => setView("injected")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "injected" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><MonitorSmartphone className="size-3.5" />注入 QQ <span className="tabular-nums">{externalProcesses.length}</span></button>
           <button type="button" onClick={() => setView("embedded")} className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors", view === "embedded" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}><Bot className="size-3.5" />内置 QQ <span className="tabular-nums">{embeddedBots.length}</span></button>
@@ -322,6 +362,8 @@ export function AccessCenterPage() {
         <InjectedQQPage windows={windows} loading={loading} busy={busy} processes={externalProcesses} onRefresh={() => void load()} onInject={(process) => void injectProcess(process)} onDetach={(process) => void detachInjected(process)} />
       ) : (
         <>
+          {view === "embedded" && inlineEditorOpen && !loading && <EmbeddedAccountForm form={form} compatible={compatible} busy={busy} windows={windows} onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))} onSubmit={() => void createEmbedded()} onCancel={() => setInlineEditorOpen(false)} />}
+          {view === "embedded" && !inlineEditorOpen && !loading && <div className="flex justify-end"><Button size="sm" onClick={openAdd}><Plus className="size-3.5" />添加内置 QQ</Button></div>}
           {loading ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />加载账号</div> : displayBots.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {displayBots.map((bot, index) => {
@@ -355,7 +397,7 @@ export function AccessCenterPage() {
                 );
               })}
             </div>
-          ) : <div className="rounded-lg border border-dashed border-border p-12 text-center"><Bot className="mx-auto size-9 text-muted-foreground/35" /><h3 className="mt-4 text-sm font-medium">{view === "embedded" ? "还没有内置 QQ 账号" : "还没有 QQ 账号"}</h3><p className="mt-1 text-xs text-muted-foreground">使用下方按钮添加 QQ 或 OneBot 接入</p><Button className="mt-4" size="sm" onClick={openAdd}><Plus className="size-3.5" />添加接入</Button></div>}
+          ) : inlineEditorOpen ? null : <div className="rounded-lg border border-dashed border-border p-12 text-center"><Bot className="mx-auto size-9 text-muted-foreground/35" /><h3 className="mt-4 text-sm font-medium">{view === "embedded" ? "还没有内置 QQ 账号" : "还没有 QQ 账号"}</h3><p className="mt-1 text-xs text-muted-foreground">{windows ? "使用下方按钮添加 QQ 接入" : "使用下方按钮添加内置 QQ"}</p><Button className="mt-4" size="sm" onClick={openAdd}><Plus className="size-3.5" />{windows ? "添加接入" : "添加内置 QQ"}</Button></div>}
 
           {!loading && view === "embedded" && (windows ? (
             <Card><CardHeader className="flex-row flex-wrap items-start justify-between gap-3"><div className="min-w-0"><CardTitle>Windows QQ</CardTitle><CardDescription className="break-all">{qqStatus.qq_executable || "安装并登录系统 QQ 后，可从添加接入中选择进程连接"}</CardDescription></div><Badge className="shrink-0" variant={qqStatus.installed ? "success" : "secondary"}>{qqStatus.installed ? "已检测到" : "未检测到"}</Badge></CardHeader><CardContent><Button variant="outline" onClick={() => window.open(String(qqStatus.official_download_url || "https://im.qq.com/index/#/"), "_blank", "noopener,noreferrer")}><ExternalLink className="size-3.5" />前往 QQ 官网</Button></CardContent></Card>
@@ -376,7 +418,7 @@ export function AccessCenterPage() {
           ) : addStep === "qq" ? (
             <div className="mt-6 space-y-3"><div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">检测到 {externalProcesses.length} 个 QQ 主进程</p><Button size="sm" variant="outline" onClick={() => void load()}><RefreshCw className="size-3.5" />刷新</Button></div>{externalProcesses.length ? externalProcesses.map((process) => <div key={process.id || process.pid} className="flex flex-col gap-3 rounded-lg border border-border/70 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{process.name || process.process_name || "QQ"}</span><Badge variant={process.status === "online" ? "success" : process.injected ? "warning" : "secondary"}>{process.status === "online" ? "已连接" : process.injected ? "已注入" : "可注入"}</Badge></div><p className="mt-1 text-xs text-muted-foreground">PID {process.pid}{process.uin ? ` · QQ ${process.uin}` : ""}{process.memory_rss_mb ? ` · ${process.memory_rss_mb} MB` : ""}</p>{process.path && <p className="mt-1 truncate text-xs text-muted-foreground" title={String(process.path)}>{process.path}</p>}{process.error && <p className="mt-2 text-xs text-amber-600">{process.error}</p>}</div><Button size="sm" disabled={process.status === "online" || (!process.can_load && !process.can_attach) || busy === `inject:${process.pid}`} onClick={() => void injectProcess(process)}>{busy === `inject:${process.pid}` ? <Loader2 className="size-3.5 animate-spin" /> : <MonitorSmartphone className="size-3.5" />}{process.status === "online" ? "已连接" : process.injected ? "继续连接" : "QQ 注入"}</Button></div>) : <div className="rounded-lg border border-dashed border-border p-10 text-center"><MonitorSmartphone className="mx-auto size-8 text-muted-foreground/35" /><p className="mt-3 text-sm text-muted-foreground">未检测到 QQ 主进程，请先安装、启动并登录 QQ。</p></div>}<Button variant="ghost" size="sm" onClick={() => setAddStep("choose")}>返回接入方式</Button></div>
           ) : (
-            <div className="mt-6 space-y-4"><label className="block space-y-1.5 text-sm"><span className="font-medium">账号标识</span><Input value={form.bot_id} onChange={(event) => setForm({ ...form, bot_id: event.target.value })} placeholder="例如 bot1" /></label><label className="block space-y-1.5 text-sm"><span className="font-medium">显示名称</span><Input value={form.nickname} onChange={(event) => setForm({ ...form, nickname: event.target.value })} placeholder="可选" /></label><label className="block space-y-1.5 text-sm"><span className="font-medium">QQ 号</span><Input value={form.uin} onChange={(event) => setForm({ ...form, uin: event.target.value })} placeholder="可选，用于快捷登录" /></label><label className="block space-y-1.5 text-sm"><span className="font-medium">QQ 版本</span><select value={form.qq_version_key} onChange={(event) => setForm({ ...form, qq_version_key: event.target.value })} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">{compatible.map((item) => <option key={item.key} value={item.key}>{item.label} {item.version}</option>)}</select></label><div className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm"><div><p className="font-medium">快捷登录</p><p className="mt-1 text-xs text-muted-foreground">优先复用本地 QQ 登录会话</p></div><ToggleSwitch value={form.force_quick_login} onChange={(value) => setForm({ ...form, force_quick_login: value })} ariaLabel="快捷登录" /></div><div className="flex justify-end gap-2 border-t pt-4"><Button variant="outline" onClick={() => setAddStep("choose")}>返回</Button><Button onClick={() => void createEmbedded()} disabled={busy === "create"}>{busy === "create" ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}创建账号</Button></div></div>
+            <EmbeddedAccountForm form={form} compatible={compatible} busy={busy} windows={windows} onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))} onSubmit={() => void createEmbedded()} onCancel={() => setAddStep("choose")} />
           )}
         </DialogContent>
       </Dialog>
