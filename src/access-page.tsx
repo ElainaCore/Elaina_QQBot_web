@@ -210,6 +210,7 @@ export function AccessCenterPage() {
   const [view, setView] = useState<AccessView>("accounts");
   const [bots, setBots] = useState<ApiData[]>([]);
   const [versions, setVersions] = useState<ApiData[]>([]);
+  const [qqJobs, setQqJobs] = useState<Record<string, ApiData>>({});
   const [qqStatus, setQqStatus] = useState<ApiData>({});
   const [processes, setProcesses] = useState<ApiData[]>([]);
   const [platform, setPlatform] = useState("");
@@ -237,6 +238,7 @@ export function AccessCenterPage() {
       setBots(Array.isArray(botData.bots) ? botData.bots : []);
       setVersions(nextVersions);
       setQqStatus(statusData.status || {});
+      setQqJobs(statusData.jobs && typeof statusData.jobs === "object" ? statusData.jobs : {});
       setProcesses(Array.isArray(processData.processes) ? processData.processes : []);
       setPlatform(String(systemData.platform || (statusData.status?.install_strategy === "official_website" ? "windows" : "linux")));
       setForm((current) => ({
@@ -299,10 +301,15 @@ export function AccessCenterPage() {
     if (action === "delete" && !await dialog.confirm({ title: "删除账号", description: `删除账号 ${bot.name || botId}？本地 QQ 会话数据将保留。`, confirmLabel: "删除", destructive: true })) return;
     setBusy(`${action}:${botId}`);
     try {
-      await api(`/api/embedded/${action}`, { method: "POST", body: JSON.stringify({ bot_id: botId, cleanup_data: false }) });
-      toast(action === "start" ? "QQ 已启动" : action === "stop" ? "QQ 已停止" : action === "delete" ? "账号已删除" : "二维码已刷新");
+      const result = await api<ApiData>(`/api/embedded/${action}`, { method: "POST", body: JSON.stringify({ bot_id: botId, cleanup_data: false }) });
+      if (action === "start" && result.started === false) {
+        toast(String(result.message || "QQ 未启动"), { variant: "error" });
+      } else {
+        toast(action === "start" ? "QQ 已启动" : action === "stop" ? "QQ 已停止" : action === "delete" ? "账号已删除" : "二维码已刷新");
+      }
       await load();
     } catch (error) {
+      if (action === "start") await load();
       toast(error instanceof Error ? error.message : "操作失败", { variant: "error" });
     } finally { setBusy(""); }
   };
@@ -334,8 +341,27 @@ export function AccessCenterPage() {
     setBusy(`qq:${action}:${versionKey}`);
     try {
       const result = await api<ApiData>(`/api/qq/${action}`, { method: "POST", body: JSON.stringify({ version_key: versionKey, auto_download: true }) });
-      toast(String(result.message || result.job?.message || "任务已提交"));
+      let job: ApiData | undefined = result.job;
+      if (job) setQqJobs((current) => ({ ...current, [versionKey]: job! }));
+      while (job?.state === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        const progress = await api<ApiData>(`/api/qq/progress?version_key=${encodeURIComponent(versionKey)}`);
+        if (!progress.progress) {
+          job = { ...job, state: "failed", message: "安装任务状态已丢失，请刷新后重试" };
+          setQqJobs((current) => ({ ...current, [versionKey]: job! }));
+          break;
+        }
+        job = progress.progress;
+        setQqJobs((current) => ({ ...current, [versionKey]: job! }));
+      }
       await load();
+      if (job && job.state !== "completed") {
+        const message = String(job.message || job.error || "QQ 客户端操作未完成");
+        const detail = String(job.detail || "");
+        toast(detail ? `${message}：${detail}` : message, { variant: "error" });
+      } else {
+        toast(String(job?.message || result.message || "任务已完成"));
+      }
     } catch (error) { toast(error instanceof Error ? error.message : "QQ 客户端操作失败", { variant: "error" }); }
     finally { setBusy(""); }
   };
@@ -404,7 +430,7 @@ export function AccessCenterPage() {
           {!loading && view === "embedded" && (windows ? (
             <Card><CardHeader className="flex-row flex-wrap items-start justify-between gap-3"><div className="min-w-0"><CardTitle>Windows QQ</CardTitle><CardDescription className="break-all">{qqStatus.qq_executable || "安装并登录系统 QQ 后，可从添加接入中选择进程连接"}</CardDescription></div><Badge className="shrink-0" variant={qqStatus.installed ? "success" : "secondary"}>{qqStatus.installed ? "已检测到" : "未检测到"}</Badge></CardHeader><CardContent><Button variant="outline" onClick={() => window.open(String(qqStatus.official_download_url || "https://im.qq.com/index/#/"), "_blank", "noopener,noreferrer")}><ExternalLink className="size-3.5" />前往 QQ 官网</Button></CardContent></Card>
           ) : (
-            <Card><CardHeader><CardTitle>内置 QQ 运行时</CardTitle><CardDescription>下载或安装框架管理的 Linux QQ 版本</CardDescription></CardHeader><CardContent className="space-y-2">{compatible.length ? compatible.map((item) => <div key={item.key} className="flex flex-col gap-3 rounded-lg border border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2 text-sm font-medium">{item.label} {item.version}{item.recommended && <Badge>推荐</Badge>}{item.installed && <Badge variant="success">已安装</Badge>}</div><p className="mt-1 break-words text-xs text-muted-foreground">{item.platform} {item.arch} · {item.size}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy.startsWith("qq:")} onClick={() => void qqAction("download", item.key)}><Download className="size-3.5" />下载</Button><Button size="sm" disabled={busy.startsWith("qq:")} onClick={() => void qqAction("install", item.key)}><PackageCheck className="size-3.5" />安装</Button>{item.downloaded && <Button size="sm" variant="outline" onClick={() => void qqAction("cleanup", item.key)}>清理缓存</Button>}</div></div>) : <p className="text-sm text-muted-foreground">当前平台没有可用的 QQ 安装包。</p>}</CardContent></Card>
+            <Card><CardHeader><CardTitle>内置 QQ 运行时</CardTitle><CardDescription>下载或安装框架管理的 Linux QQ 版本</CardDescription></CardHeader><CardContent className="space-y-2">{compatible.length ? compatible.map((item) => { const job = qqJobs[String(item.key)]; const showJob = job && job.state !== "completed"; return <div key={item.key} className="flex flex-col gap-3 rounded-lg border border-border/70 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2 text-sm font-medium">{item.label} {item.version}{item.recommended && <Badge>推荐</Badge>}{item.installed && <Badge variant="success">已安装</Badge>}</div><p className="mt-1 break-words text-xs text-muted-foreground">{item.platform} {item.arch} · {item.size}</p></div>{showJob && <div className="w-full min-w-0 basis-full text-xs" role="status"><div className={`flex flex-wrap items-center justify-between gap-2 ${job.state === "failed" ? "text-destructive" : job.state === "manual" ? "text-amber-700" : "text-muted-foreground"}`}><span className="break-words">{job.message || "正在处理 QQ"}</span>{job.state === "running" && !job.indeterminate && <span className="shrink-0 tabular-nums">{Math.round(Number(job.percent || 0))}%</span>}</div>{job.state === "running" && !job.indeterminate && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-[width]" style={{ width: `${Math.max(0, Math.min(100, Number(job.percent || 0)))}%` }} /></div>}{job.state === "failed" && job.detail && <p className="mt-1 break-words text-destructive">{job.detail}</p>}{job.state === "manual" && job.manual_command && <code className="mt-1 block break-all text-[11px] text-muted-foreground">{job.manual_command}</code>}</div>}<div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy.startsWith("qq:")} onClick={() => void qqAction("download", item.key)}><Download className="size-3.5" />下载</Button><Button size="sm" disabled={busy.startsWith("qq:")} onClick={() => void qqAction("install", item.key)}><PackageCheck className="size-3.5" />安装</Button>{item.downloaded && <Button size="sm" variant="outline" disabled={busy.startsWith("qq:")} onClick={() => void qqAction("cleanup", item.key)}>清理缓存</Button>}</div></div>; }) : <p className="text-sm text-muted-foreground">当前平台没有可用的 QQ 安装包。</p>}</CardContent></Card>
           ))}
         </>
       )}
