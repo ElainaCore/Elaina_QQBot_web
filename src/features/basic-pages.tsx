@@ -80,7 +80,7 @@ const visualConfigGroups: Array<{
         section: "web",
         key: "favicon_url",
         label: "面板图标地址",
-        placeholder: "/web/favicon.svg",
+        placeholder: "/web/favicon.png",
       },
       {
         section: "owner",
@@ -242,6 +242,7 @@ export function ConfigPage() {
     {},
   );
   const [mode, setMode] = useState<"visual" | "yaml">("visual");
+  const [activeGroup, setActiveGroup] = useState(visualConfigGroups[0].title);
   const [ownerIdsText, setOwnerIdsText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -474,8 +475,10 @@ export function ConfigPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {visualConfigGroups.map((group) => (
+        <div className="config-workspace">
+          <nav className="config-groups" aria-label="配置分组">{visualConfigGroups.map((group) => <button key={group.title} type="button" aria-current={activeGroup === group.title ? "page" : undefined} onClick={() => setActiveGroup(group.title)}><span>{group.title}</span><span>{group.fields.length}</span></button>)}</nav>
+          <div className="config-group-content">
+          {visualConfigGroups.filter((group) => group.title === activeGroup).map((group) => (
             <Card key={group.title}>
               <CardHeader>
                 <CardTitle>{group.title}</CardTitle>
@@ -486,6 +489,7 @@ export function ConfigPage() {
               </CardContent>
             </Card>
           ))}
+          </div>
         </div>
       )}
     </section>
@@ -689,7 +693,7 @@ export function ConnectionsPage({
           })}
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center"><Globe2 className="mx-auto size-8 text-muted-foreground/40" /><p className="mt-3 text-sm text-muted-foreground">暂无 OneBot 接入</p><Button className="mt-4" size="sm" onClick={openAdd}><Plus className="size-3.5" />添加接入</Button></div>
+        <div className="panel-empty rounded-lg border border-dashed border-border p-10 text-center"><Globe2 className="mx-auto size-8 text-muted-foreground/40" /><p className="mt-3 text-sm text-muted-foreground">暂无 OneBot 接入</p><Button className="mt-4" size="sm" onClick={openAdd}><Plus className="size-3.5" />添加接入</Button></div>
       )}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-[560px]">
@@ -913,7 +917,7 @@ export function ExtensionsPage({
       ) : (
         selected
           ? <iframe key={selectedKey} src={"/api/web-pages/" + encodeURIComponent(selectedKey)} title={String(selected.label || selected.title || selected.name || selected.key)} onLoad={handleFrameLoad} className="block h-full min-h-[420px] w-full max-w-full border-0 bg-background md:min-h-0" />
-          : <div className="grid h-full place-items-center"><Notice text={pages.length ? "请在主侧边栏选择扩展页面" : "暂无插件自定义页面"} /></div>
+          : <div className="extension-empty"><div className="panel-empty text-center"><div className="extension-symbol">E</div><h2 className="mt-5 text-lg font-semibold">扩展工作空间</h2><p className="mt-2 text-sm text-muted-foreground">{pages.length ? "请在主侧边栏选择扩展页面" : "暂无插件自定义页面"}</p><p className="mt-2 text-xs text-muted-foreground">插件提供的管理页面会显示在这里</p></div></div>
       )}
     </section>
   );

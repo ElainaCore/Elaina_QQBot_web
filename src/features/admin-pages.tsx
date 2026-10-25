@@ -289,7 +289,7 @@ export function LogsPage() {
         detail="消息、事件、框架、错误与登录记录"
       />
       {loadError && <Notice text={loadError} error />}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="console-toolbar flex flex-wrap items-center gap-2">
         {logTypes.map((item) => {
           const count =
             item.id === "login"
@@ -406,7 +406,7 @@ export function LogsPage() {
               <Notice text="暂无登录记录" />
             )
           ) : rows.length ? (
-            <div ref={logContainerRef} className="max-h-[min(680px,68vh)] space-y-2 overflow-auto pr-1">
+            <div ref={logContainerRef} className="logs-viewport max-h-[min(680px,68vh)] space-y-2 overflow-auto pr-1">
               {rows.map((row: ApiData, index: number) => (
                 <LogRow
                   key={String(row.id || index) + String(row.timestamp)}

@@ -7,6 +7,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
       type={type}
       ref={ref}
       data-ui-control=""
+      data-console-input=""
       className={cn(
         'flex h-10 w-full min-w-0 rounded-md border border-border bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none',
         'file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium',

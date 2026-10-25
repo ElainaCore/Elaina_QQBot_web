@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ComponentType } from "react";
 import {
   Activity,
   Bot,
+  Boxes,
   ChevronRight,
   CheckCircle2,
   CircleAlert,
@@ -56,28 +57,31 @@ import { ConnectionsPage } from "@/features/basic-pages";
 
 type Icon = ComponentType<{ className?: string }>;
 
-function useData<T>(load: () => Promise<T>, initial: T) {
+function useData<T>(load: () => Promise<T>, initial: T, interval = 0) {
   const [data, setData] = useState(initial);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    load()
-      .then((value) => {
-        if (active) setData(value);
-      })
-      .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : "加载失败");
-      })
-      .finally(() => {
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const value = await load();
+        if (active) { setData(value); setError(""); }
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : "加载失败");
+      } finally {
+        pending = false;
         if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
+      }
     };
-  }, [load]);
+    setLoading(true);
+    void refresh();
+    const timer = interval > 0 ? window.setInterval(() => { if (!document.hidden) void refresh(); }, interval) : undefined;
+    return () => { active = false; if (timer !== undefined) window.clearInterval(timer); };
+  }, [load, interval]);
   return { data, loading, error };
 }
 
@@ -179,11 +183,11 @@ function Stat({
   tone?: "primary" | "success" | "warning";
 }) {
   return (
-    <Card>
+    <Card className="metric-card">
       <CardContent className="flex items-start justify-between p-5 pt-5 sm:p-5 sm:pt-5">
         <div>
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
           <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
         </div>
         <div
@@ -199,6 +203,8 @@ function Stat({
           <StatIcon className="size-5" />
         </div>
       </CardContent>
+      {String(value).endsWith("%") && <div className="metric-meter" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, parseFloat(String(value)) || 0))}><span style={{ width: `${Math.min(100, Math.max(0, parseFloat(String(value)) || 0))}%` }} /></div>}
+
     </Card>
   );
 }
@@ -235,14 +241,17 @@ export function OverviewPage({ navigate }: { navigate: (page: Page) => void }) {
   const system = useData(
     useCallback(() => api<ApiData>("/api/system/info"), []),
     {},
+    10000,
   );
   const bots = useData(
     useCallback(() => api<ApiData>("/api/bots"), []),
     { bots: [] },
+    15000,
   );
   const processes = useData(
     useCallback(() => api<ApiData>("/api/processes"), []),
     { processes: [] },
+    30000,
   );
   const dependencies = useData(
     useCallback(() => api<ApiData>("/api/system/dependencies"), []),
@@ -261,231 +270,59 @@ export function OverviewPage({ navigate }: { navigate: (page: Page) => void }) {
     if (!await dialog.confirm({ title: "重启框架", description: "重启 ElainaBot？Web 面板会短暂断开。", confirmLabel: "重启", destructive: true })) return;
     await api("/api/bot/restart", { method: "POST" }).catch(() => undefined);
   };
+  const [samples, setSamples] = useState<Array<{ time: number; cpu: number; memory: number }>>([]);
+  useEffect(() => {
+    if (info.cpu_percent === undefined || info.memory_percent === undefined) return;
+    setSamples((previous) => [...previous, { time: Date.now(), cpu: Number(info.cpu_percent), memory: Number(info.memory_percent) }].slice(-60));
+  }, [info]);
+  const online = botList.filter((bot: ApiData) => bot.connected).length;
+
+  const dependencyList: ApiData[] = [{name: "Python", installed: dependencies.data.python?.version, required: dependencies.data.python?.required, status: dependencies.data.python?.status || (dependencies.data.python?.version ? "ok" : "missing")}, ...(dependencies.data.dependencies || [])];
+  const percent = (value: unknown) => Math.min(100, Math.max(0, Number(value) || 0));
+  const trendPath = (field: "cpu" | "memory") => samples.map((sample, index) => `${index ? "L" : "M"}${32 + index / Math.max(1, samples.length - 1) * 520},${108 - percent(sample[field]) * .94}`).join(" ");
   return (
-    <section className="space-y-6 pt-1 sm:pt-2">
-      {(password.data.is_default || password.data.is_weak) && (
-        <div className="flex min-h-12 items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm leading-6 text-amber-900 sm:items-center">
-          <CircleAlert className="size-4 shrink-0" />
-          <span className="min-w-0 break-words">当前管理员密码为默认或弱密码，请在框架配置中修改后重启框架。</span>
-        </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="QQ 账号"
-          value={botList.length}
-          detail={
-            botList.filter((bot: ApiData) => bot.connected).length + " 个已连接"
-          }
-          icon={Users}
-          tone="success"
-        />
-        <Stat
-          label="检测进程"
-          value={processList.length}
-          detail={
-            processList.filter((process: ApiData) => process.managed).length +
-            " 个受管进程"
-          }
-          icon={Activity}
-          tone="warning"
-        />
-        <Stat
-          label="CPU 使用率"
-          value={(info.cpu_percent ?? 0) + "%"}
-          detail={(info.cpu_cores ?? "—") + " 核处理器"}
-          icon={Cpu}
-        />
-        <Stat
-          label="内存使用"
-          value={(info.memory_percent ?? 0) + "%"}
-          detail={
-            formatBytes((info.memory_used ?? 0) * 1024 * 1024) +
-            " / " +
-            formatBytes((info.memory_total ?? 0) * 1024 * 1024)
-          }
-          icon={Database}
-        />
+    <section className="dashboard">
+      {(password.data.is_default || password.data.is_weak) && <div className="dashboard-alert"><CircleAlert className="size-4 shrink-0" /><span>当前管理员密码为默认或弱密码，请在框架配置中修改后重启框架。</span></div>}
+      {system.error && <div className="dashboard-alert" role="status">资源数据更新失败：{system.error}，10 秒后重试</div>}
+      <div className="dashboard-metrics">
+        <Stat label="接入账号" value={bots.loading ? "—" : botList.length} detail="已配置的 QQ 机器人" icon={Bot} />
+        <Stat label="在线连接" value={bots.loading ? "—" : online} detail={botList.length ? `${Math.round(online / botList.length * 100)}% 账号在线` : "等待添加账号"} icon={PlugZap} tone="success" />
+        <Stat label="插件处理器" value={system.loading ? "—" : info.plugins_count ?? 0} detail="已注册的消息处理器" icon={Boxes} />
+        <Stat label="受管进程" value={processes.loading ? "—" : processList.filter((item: ApiData) => item.managed).length} detail={`共检测到 ${processList.length} 个进程`} icon={Activity} tone="warning" />
       </div>
-      <div className="grid items-start gap-4 lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="space-y-4">
-        <Card>
-          <CardHeader className="flex-row items-start justify-between">
-            <div>
-              <CardTitle>QQ 账号</CardTitle>
-              <CardDescription>当前接入的机器人账号与连接状态</CardDescription>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("access")}
-            >
-              查看全部 <ExternalLink className="size-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {bots.loading ? (
-              <Loading />
-            ) : botList.length ? (
-              botList.slice(0, 4).map((bot: ApiData, index: number) => (
-                <div
-                  key={bot.bot_id || bot.bot_qq || index}
-                  className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary">
-                      <Bot className="size-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {bot.name ||
-                          bot.nickname ||
-                          bot.qq ||
-                          bot.bot_qq ||
-                          "未命名账号"}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        QQ {bot.qq || bot.bot_qq || "等待登录"}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={bot.connected ? "success" : "secondary"}>
-                    {bot.connected ? "已连接" : "未连接"}
-                  </Badge>
-                </div>
-              ))
-            ) : (
-              <Empty
-                icon={Bot}
-                text="还没有接入 QQ 账号"
-                action="前往账号与连接"
-                onClick={() => navigate("access")}
-              />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>依赖使用</CardTitle>
-            <CardDescription>Python 运行环境与框架依赖状态</CardDescription>
-          </CardHeader>
+      <div className="dashboard-primary">
+        <Card className="dashboard-trend">
+          <CardHeader className="flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-muted-foreground" />资源变化</CardTitle><span className="text-xs text-muted-foreground">本次会话 · 每 10 秒采样</span></CardHeader>
           <CardContent>
-            {dependencies.loading ? (
-              <Loading />
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Python {dependencies.data.python?.version || "未知"} · 要求 {dependencies.data.python?.required || ">= 3.11"}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {(dependencies.data.dependencies || []).map((item: ApiData) => (
-                    <Badge key={String(item.name)} variant={item.status === "ok" ? "success" : "destructive"}>
-                      {item.name} {item.installed || "缺失"}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>系统信息</CardTitle>
-            <CardDescription>运行环境与资源使用状态</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {system.loading ? (
-              <Loading />
-            ) : (
-              <>
-                <InfoRow
-                  icon={Server}
-                  label="系统"
-                  value={info.system_version || "未知"}
-                />
-                <InfoRow
-                  icon={Zap}
-                  label="框架运行时"
-                  value={formatUptime(info.uptime ?? 0)}
-                />
-                <InfoRow
-                  icon={FileText}
-                  label="插件处理器"
-                  value={(info.plugins_count ?? 0) + " 个"}
-                />
-                <InfoRow
-                  icon={HardDrive}
-                  label="磁盘"
-                  value={(info.disk_info?.percent ?? 0) + "% 已使用"}
-                />
-                <InfoRow
-                  icon={Cpu}
-                  label="处理器"
-                  value={(info.cpu_model || "未知") + " · " + (info.cpu_cores || "—") + " 核"}
-                />
-                <InfoRow
-                  icon={Activity}
-                  label="框架进程"
-                  value={(info.framework_cpu_percent || 0) + "% CPU · " + (info.framework_memory_total || 0) + " MB"}
-                />
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>快捷入口</CardTitle>
-          <CardDescription>常用的运行管理操作</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-2 sm:grid-cols-3">
-          <Quick
-            icon={Plus}
-            title="添加接入"
-            detail="接入 QQ 或 OneBot 实现"
-            onClick={() => navigate("access")}
-          />
-          <Quick
-            icon={Network}
-            title="账号与连接"
-            detail="管理 QQ 与 OneBot 接入"
-            onClick={() => navigate("access")}
-          />
-          <Quick
-            icon={Terminal}
-            title="实时日志"
-            detail="查看框架事件流"
-            onClick={() => navigate("logs")}
-          />
-        </CardContent>
-      </Card>
-      <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>面板信息</CardTitle>
-            <CardDescription>QQ 机器人框架 WebUI</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-3 rounded-lg bg-primary/5 p-4">
-              <Logo className="size-11" />
-              <div>
-                <p className="font-semibold">ElainaBot</p>
-                <p className="text-xs text-muted-foreground">QQ 机器人框架</p>
-              </div>
+            <div className="trend-summary"><span><i className="cpu-dot" />CPU <b>{info.cpu_percent ?? "—"}%</b></span><span><i className="memory-dot" />内存 <b>{info.memory_percent ?? "—"}%</b></span><span className="trend-sample-count">{samples.length} 个采样点</span></div>
+            <div className="trend-plot">
+              <svg viewBox="0 0 568 126" preserveAspectRatio="none" role="img" aria-label="当前页面会话中的 CPU 和内存使用率变化，纵轴为百分比">
+                <defs><linearGradient id="cpu-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".16" /><stop offset="100%" stopColor="currentColor" stopOpacity="0" /></linearGradient></defs>
+                {[0, 50, 100].map((tick) => <g key={tick}><line x1="32" y1={108-tick*.94} x2="552" y2={108-tick*.94} stroke="var(--border)" strokeDasharray="4 5" /><text x="0" y={111-tick*.94} fill="var(--muted-foreground)" fontSize="9">{tick}%</text></g>)}
+                {samples.length > 1 && <><path d={trendPath("cpu") + " L552,108 L32,108 Z"} fill="url(#cpu-fill)" /><path d={trendPath("cpu")} fill="none" stroke="var(--primary)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" /><path d={trendPath("memory")} fill="none" stroke="var(--dashboard-teal)" strokeWidth="2" vectorEffect="non-scaling-stroke" /></>}
+              </svg>
+              {samples.length < 2 && <p className="trend-waiting">{system.loading ? "读取资源数据…" : "正在采集，下一次采样后显示趋势"}</p>}
             </div>
-            <p className="text-sm leading-relaxed text-muted-foreground">面板提供 QQ 账号、内置 QQ、OneBot、消息、插件和维护管理能力。</p>
+            <div className="trend-axis"><span>{samples[0] ? new Date(samples[0].time).toLocaleTimeString('zh-CN', {hour12:false}) : "—"}</span><span>仅展示真实采样数据</span><span>{samples.length > 1 ? new Date(samples[samples.length-1].time).toLocaleTimeString('zh-CN', {hour12:false}) : "—"}</span></div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>维护操作</CardTitle>
-            <CardDescription>重启会短暂断开面板连接</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" onClick={restart}><RotateCw className="size-4" />重启框架</Button>
-          </CardContent>
+        <Card className="dashboard-resources">
+          <CardHeader className="flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Cpu className="size-4 text-muted-foreground" />资源监控</CardTitle><span className="soft-status">实时</span></CardHeader>
+          <CardContent>{[{label:"CPU", Icon:Cpu, value:info.cpu_percent, detail:`${info.cpu_cores ?? "—"} 核处理器`, process:`框架占用 ${info.framework_cpu_percent ?? "—"}%`, tone:"cpu"}, {label:"内存", Icon:Database, value:info.memory_percent, detail:`${formatBytes((info.memory_used ?? 0)*1024*1024)} / ${formatBytes((info.memory_total ?? 0)*1024*1024)}`, process:`框架 ${info.framework_memory_total ?? "—"} MB`, tone:"memory"}].map(({label,Icon,value,detail,process,tone}) => <div key={label} className={`resource-row ${tone}`}><div className="resource-label"><span><Icon className="size-4" />{label}<small>系统占用</small></span><b>{value ?? "—"}<small>%</small></b></div><div className="resource-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent(value)}><span style={{width:percent(value)+"%"}} /></div><div className="resource-detail"><span>{detail}</span><span>{process}</span></div></div>)}</CardContent>
         </Card>
       </div>
+      <div className="dashboard-secondary">
+        <Card className="dashboard-accounts">
+          <CardHeader className="flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Bot className="size-4 text-muted-foreground" />账号状态</CardTitle><Button variant="ghost" size="sm" onClick={() => navigate("access")}>管理 <ChevronRight className="size-3.5" /></Button></CardHeader>
+          <CardContent>{bots.loading ? <Loading /> : botList.length ? <div className="dashboard-account-list">{botList.slice(0,4).map((bot: ApiData,index:number) => <div className="dashboard-account-row" key={bot.bot_id || bot.bot_qq || index}><span className={cn("connection-dot",bot.connected && "online")} /><span className="truncate font-medium">{bot.name || bot.nickname || bot.qq || bot.bot_qq || "未命名账号"}</span><span className="account-number">{bot.qq || bot.bot_qq}</span><span className="account-state">{bot.connected ? "在线" : "离线"}</span></div>)}</div> : <div className="dashboard-no-accounts"><Bot className="size-6 text-muted-foreground" /><span>还没有接入账号</span><Button size="sm" variant="outline" onClick={() => navigate("access")}>添加接入</Button></div>}</CardContent>
+        </Card>
+
+        <Card className="dashboard-dependencies">
+          <CardHeader className="flex-row items-center justify-between"><CardTitle className="flex items-center gap-2"><Boxes className="size-4 text-muted-foreground" />运行环境</CardTitle><span className="soft-status">{dependencyList.filter(item => item.status === "ok").length} 项正常</span></CardHeader>
+          <CardContent>{dependencies.loading ? <Loading /> : <div className="dependency-grid">{dependencyList.map(item => <div key={String(item.name)} className="dependency-tile"><div><span>{item.name}</span><i className={item.status === "ok" ? "online" : "missing"} /></div><div><code>{item.installed || "缺失"}</code><span title={String(item.required || "")}>{item.required || "已安装"}</span></div></div>)}</div>}</CardContent>
+        </Card>
+      </div>
+      <footer className="dashboard-footer"><div className="dashboard-runtime"><span><Server className="size-3.5" />{info.platform || "运行环境"}</span><span>已运行 {formatUptime(info.uptime ?? 0)}</span><span title={String(info.system_version || "")}>磁盘 {info.disk_info?.percent ?? "—"}%</span></div><div className="dashboard-footer-actions"><Button variant="ghost" size="sm" onClick={() => navigate("logs")}><Terminal className="size-3.5" />日志</Button><Button variant="ghost" size="sm" onClick={() => navigate("plugins")}><Boxes className="size-3.5" />插件</Button><Button variant="ghost" size="sm" onClick={restart}><RotateCw className="size-3.5" />重启</Button></div></footer>
     </section>
   );
 }

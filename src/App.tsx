@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useState,
@@ -27,7 +28,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   MessageSquare,
-  PackageOpen,
   Palette,
   PlugZap,
   RefreshCw,
@@ -50,7 +50,6 @@ import {
   ConfigPage,
   DatabasePage,
   ExtensionsPage,
-  MarketPage,
   MessagesPage,
   PluginsPage,
   UpdatePage,
@@ -62,7 +61,6 @@ export type Page =
   | "messages"
   | "plugins"
   | "config"
-  | "market"
   | "database"
   | "update"
   | "extensions"
@@ -90,8 +88,8 @@ const navigation: Array<{
 }> = [
   {
     id: "overview",
-    label: "总览",
-    detail: "主机与服务状态",
+    label: "仪表盘",
+    detail: "运行概况与资源监控",
     icon: LayoutDashboard,
   },
   {
@@ -123,12 +121,6 @@ const navigation: Array<{
     label: "扩展页面",
     detail: "插件提供的面板页面",
     icon: PlugZap,
-  },
-  {
-    id: "market",
-    label: "插件市场",
-    detail: "浏览、安装与卸载",
-    icon: PackageOpen,
   },
   {
     id: "database",
@@ -179,7 +171,7 @@ export function Logo({ className }: { className?: string }) {
       )}
     >
       <img
-        src="/web/favicon.svg"
+        src="/web/favicon.png"
         alt="ElainaBot"
         className="size-9 object-contain"
       />
@@ -247,8 +239,8 @@ function Login({ onAuthed }: { onAuthed: () => void }) {
       </div>
       <section className="login-shell" aria-labelledby="login-title">
         <div className="brand-block">
-          <div className="brand-mark"><img src="/web/favicon.svg" alt="" /></div>
-          <div className="brand-title-row"><h1 id="login-title">ElainaBot v2</h1></div>
+          <div className="brand-mark"><img src="/web/favicon.png" alt="" /></div>
+          <div className="brand-title-row"><h1 id="login-title">ElainaBot</h1></div>
           <p>QQ 机器人框架 · 安全登录</p>
         </div>
         <form className="login-form" onSubmit={submit}>
@@ -299,8 +291,9 @@ function Sidebar({
 
   return (
     <aside
+      data-collapsed={collapsed ? "true" : "false"}
       className={cn(
-        "flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200",
+        "panel-sidebar flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200",
         collapsed ? "w-[72px]" : "w-[248px]",
       )}
     >
@@ -311,12 +304,14 @@ function Sidebar({
           <div className="text-xs text-muted-foreground">QQ 机器人框架</div>
         </div>}
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
+      <nav aria-label="主导航" className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
         {navigation.map(({ id, label, detail, icon: NavIcon }) => (
+          <Fragment key={id}>
+          {!collapsed && ["overview", "plugins", "database"].includes(id) && <div className="nav-caption">{id === "overview" ? "运行管理" : id === "plugins" ? "扩展能力" : "系统维护"}</div>}
           <div
             key={id}
             className={cn(
-              "group relative flex w-full items-stretch rounded-lg text-sm transition-colors",
+              "panel-nav-item group relative flex w-full items-stretch rounded-lg text-sm transition-colors",
               page === id
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
@@ -324,7 +319,8 @@ function Sidebar({
           >
             <button
               type="button"
-              title={collapsed ? label : undefined}
+              aria-current={page === id ? "page" : undefined}
+              title={collapsed ? label : detail}
               onClick={() => {
                 navigate(id);
                 close?.();
@@ -408,6 +404,7 @@ function Sidebar({
               <span className="pointer-events-none absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
             )}
           </div>
+          </Fragment>
         ))}
       </nav>
       {!collapsed && <div className="border-t border-sidebar-border px-4 py-4 text-xs text-muted-foreground">
@@ -650,8 +647,6 @@ function Shell({
       <PluginsPage key={reloadKey} />
     ) : page === "config" ? (
       <ConfigPage key={reloadKey} />
-    ) : page === "market" ? (
-      <MarketPage key={reloadKey} />
     ) : page === "database" ? (
       <DatabasePage key={reloadKey} />
     ) : page === "update" ? (
@@ -665,7 +660,7 @@ function Shell({
     );
 
   return (
-    <div className="flex h-[100dvh] w-full max-w-full overflow-hidden bg-sidebar text-foreground">
+    <div className="panel-shell flex h-[100dvh] w-full max-w-full overflow-hidden bg-sidebar text-foreground">
       <div className="hidden lg:block">
         <Sidebar page={page} navigate={navigate} collapsed={sidebarCollapsed} extensionPages={extensionPages} selectedExtension={selectedExtension} extensionLoading={extensionLoading} onSelectExtension={selectExtension} />
       </div>
@@ -700,7 +695,7 @@ function Shell({
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background shadow-[0_0_18px_-6px_rgb(0_0_0/0.14)] lg:rounded-tl-2xl">
-        <header className="flex h-16 min-w-0 shrink-0 items-center justify-between gap-1.5 border-b border-border/60 bg-background/90 px-1.5 backdrop-blur min-[360px]:px-2 sm:px-4 lg:px-6">
+        <header className="panel-topbar flex h-16 min-w-0 shrink-0 items-center justify-between gap-1.5 border-b border-border/60 bg-background/90 px-1.5 backdrop-blur min-[360px]:px-2 sm:px-4 lg:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
             <Button
               variant="ghost"
@@ -721,14 +716,7 @@ function Shell({
             >
               {sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
             </Button>
-            <div className="hidden min-w-0 md:block">
-              <h1 className="truncate text-base font-semibold">
-                {current.label}
-              </h1>
-              <p className="hidden text-xs text-muted-foreground sm:block">
-                {current.detail}
-              </p>
-            </div>
+            <div className="console-breadcrumb hidden min-w-0 md:flex"><span>控制台</span><ChevronRight className="size-3" /><span>{current.label}</span></div>
             <BotSelector bots={bots} value={selectedBot} loading={botsLoading} onChange={selectBot} />
           </div>
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
@@ -772,19 +760,27 @@ function Shell({
           </div>
         </header>
         <main
+          data-page={page}
           className={cn(
-            "min-h-0 flex-1",
+            "panel-main min-h-0 flex-1",
             fullBleed ? "overflow-hidden" : "overflow-y-auto",
           )}
         >
           <div
             className={cn(
-              "w-full min-w-0",
+              "workspace-content w-full min-w-0",
               fullBleed
                 ? "h-full max-w-none p-0"
                 : "max-w-none px-2.5 py-3 min-[360px]:px-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6 2xl:px-8",
             )}
           >
+            {!fullBleed && <div className="workspace-heading">
+              <div>
+                <h1>{navigation.find((item) => item.id === page)?.label}</h1>
+                <p>{navigation.find((item) => item.id === page)?.detail}</p>
+              </div>
+              <span className="workspace-tag"><span />OneBot v11</span>
+            </div>}
             {content}
           </div>
         </main>

@@ -164,7 +164,7 @@ export function PluginsPage() {
   const uninstall = async (name: string, type: "plugin" | "module") => {
     if (!await dialog.confirm({ title: "卸载扩展", description: "卸载 " + name + "？扩展文件将被移除，数据目录会保留。", confirmLabel: "卸载", destructive: true })) return;
     try {
-      const data = await api<ApiData>("/api/market/uninstall", { method: "POST", body: JSON.stringify({ name, type, keep_data: true }) });
+      const data = await api<ApiData>("/api/plugins/uninstall", { method: "POST", body: JSON.stringify({ name, type, keep_data: true }) });
       toast(String(data.message || "扩展已卸载"));
       await load();
     } catch (error) {

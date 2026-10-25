@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Boxes, Download, ExternalLink, FileImage, FileText, MessageSquare, PackageOpen, RefreshCw, Reply, Search, Send, Trash2, X } from "lucide-react";
-import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { FileImage, FileText, MessageSquare, RefreshCw, Reply, Search, Send, Trash2, X } from "lucide-react";
 import { api, type ApiData } from "@/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAppDialog } from "@/components/ui/app-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -332,7 +330,7 @@ export function MessagesPage({
   const selectedId = selected ? String(selected.chat_id || "") : "";
   return <section className="space-y-4">
     <FeatureHeading icon={MessageSquare} title="消息" detail="好友与群列表、历史消息和消息发送" />
-    <Card className="overflow-hidden">
+    <Card className="messages-card overflow-hidden">
       <CardContent className="p-0">
         <div className="flex flex-wrap items-center gap-2 border-b p-2.5 sm:p-3">
           <select
@@ -357,13 +355,13 @@ export function MessagesPage({
           <Button size="sm" variant="outline" onClick={loadChats}><Search className="size-3.5" />查询</Button>
           <Button size="icon" variant="ghost" onClick={() => { onRefreshBots(); void loadChats(); }} title="刷新机器人与联系人"><RefreshCw className="size-4" /></Button>
         </div>
-        <div className="grid min-h-0 md:min-h-[640px] md:grid-cols-[clamp(190px,28vw,230px)_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="messages-workspace grid min-h-0 md:min-h-[640px] md:grid-cols-[clamp(190px,28vw,230px)_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="min-w-0 border-b md:border-b-0 md:border-r">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div><p className="text-sm font-semibold">{chatType === "group" ? "群列表" : "好友列表"}</p><p className="text-xs text-muted-foreground">共 {chats.length} 个</p></div>
               <Badge variant="secondary">全部</Badge>
             </div>
-            <div className="max-h-[42dvh] space-y-1 overflow-y-auto overscroll-contain p-2 md:max-h-[590px]">
+            <div className="messages-chat-list max-h-[42dvh] space-y-1 overflow-y-auto overscroll-contain p-2 md:max-h-[590px]">
               {loading ? <Busy /> : chats.length ? chats.map((chat, index) => {
                 const active = selectedId === String(chat.chat_id || "") && String(selected?.bot_qq || "") === String(chat.bot_qq || "");
                 return <button key={String(chat.bot_qq || "") + "-" + String(chat.chat_id || index)} type="button" onClick={() => openChat(chat)} className={cn("flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 py-2.5 text-left transition-colors hover:bg-muted/70", active && "bg-primary/10 text-primary")}>
@@ -378,7 +376,7 @@ export function MessagesPage({
               <div className="min-w-0 flex-1"><p className="break-words font-semibold">{selected ? chatDisplayName(selected) : "请选择会话"}</p><p className="break-words text-xs text-muted-foreground">{selected ? (chatType === "group" ? "群号：" : "QQ：") + selected.chat_id + " · 接入账号：" + (selected.bot_qq || bot || "自动选择") : "从列表选择好友或群后即可查看和发送消息"}</p></div>
               {selected && chatType === "group" && <Button className="w-full min-[380px]:w-auto" size="sm" variant="outline" onClick={editRemark}>群备注</Button>}
             </div>
-            <div ref={historyViewportRef} className="min-h-[300px] flex-1 space-y-3 overflow-y-auto overscroll-contain bg-muted/20 p-2.5 sm:min-h-[360px] sm:p-4 md:max-h-[470px]">
+            <div ref={historyViewportRef} className="messages-history min-h-[300px] flex-1 space-y-3 overflow-y-auto overscroll-contain bg-muted/20 p-2.5 sm:min-h-[360px] sm:p-4 md:max-h-[470px]">
               {selected && history.length ? history.map((message, index) => {
                 const id = message.message_id || message.id;
                 const recallable = Boolean(message.message_id);
@@ -400,7 +398,7 @@ export function MessagesPage({
                     </div>
                   </div>
                 </div>;
-              }) : <div className="grid h-full min-h-[320px] place-items-center"><Notice text={selected ? "暂无历史消息，可以直接发送新消息" : "选择一个好友或群开始查看消息"} /></div>}
+              }) : <div className="messages-placeholder grid h-full min-h-[320px] place-items-center"><Notice text={selected ? "暂无历史消息，可以直接发送新消息" : "选择一个好友或群开始查看消息"} /></div>}
             </div>
             <div className="space-y-2 border-t bg-background p-3">
               {quotedMessage && <div className="flex min-w-0 items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
@@ -408,7 +406,7 @@ export function MessagesPage({
                 <div className="min-w-0 flex-1"><p className="truncate font-medium text-primary">引用 {quotedMessage.is_self ? "我" : String(quotedMessage.nickname || messageSenderId(quotedMessage) || "该成员")}</p><p className="truncate text-muted-foreground">{quotedMessageSummary(quotedMessage)}</p></div>
                 <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0" title="取消引用" onClick={() => setQuotedMessage(null)}><X className="size-3.5" /></Button>
               </div>}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="console-toolbar flex flex-wrap items-center gap-2">
                 <SelectBox value={messageType} onChange={(value) => setMessageType(value as "text" | "media")} className="w-full min-[360px]:w-[120px]"><option value="text">普通消息</option><option value="media">资源链接</option></SelectBox>
                 <label><input className="hidden" type="file" accept="image/*" disabled={!selected} onChange={(event) => setImage(event.target.files?.[0] || null)} /><Button asChild variant="outline" size="sm" className={!selected ? "pointer-events-none opacity-50" : ""}><span><FileImage className="size-4" />选择图片</span></Button></label>
                 {image && <span className="min-w-0 max-w-full flex-1 truncate text-xs text-muted-foreground sm:max-w-[240px]">{image.name}</span>}
@@ -441,174 +439,6 @@ export function MessagesPage({
             {pb ? <pre className="max-h-[32dvh] max-w-full overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-200">{rawPbText(pb) || "PB 数据为空"}</pre> : <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">该消息来源未提供 PB 原始数据。已连接的 QQ 新消息会在这里显示 PB；OneBot 接入是否提供取决于上游实现。</p>}
           </div>
         </div>;
-        })()}
-      </DialogContent>
-    </Dialog>
-  </section>;
-}
-
-function marketType(item: ApiData): "complete" | "single" | "module" {
-  const value = String(item.type || "").toLowerCase();
-  if (value === "module") return "module";
-  if (["single", "standalone", "alone"].includes(value)) return "single";
-  return "complete";
-}
-
-function marketAvatarUrl(item: ApiData) {
-  const match = String(item.github || "").match(/github\.com\/([^/]+)/i);
-  return match ? `https://github.com/${match[1]}.png?size=96` : "";
-}
-
-function marketOfficial(item: ApiData) {
-  return String(item.github || "").toLowerCase().includes("elainacore/") || String(item.author || "").toLowerCase() === "elainaqq";
-}
-
-function marketPreviewFile(preview: ApiData): ApiData | null {
-  const files = Array.isArray(preview.files) ? preview.files : [];
-  return files.find((file: ApiData) => String(file.path || file.name) === String(preview.selected || "")) || files[0] || null;
-}
-
-function marketMarkdownHtml(preview: ApiData): string {
-  const file = marketPreviewFile(preview);
-  const content = String(file?.content || "");
-  if (!content) return "";
-  const initial = DOMPurify.sanitize(marked.parse(content, { gfm: true }) as string);
-  const document = new DOMParser().parseFromString(initial, "text/html");
-  const github = String(preview.item?.github || "");
-  const match = github.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i);
-  const branch = String(preview.item?.branch || "main");
-  const filePath = String(file?.path || "").replaceAll("\\\\", "/");
-  const directory = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/") + 1) : "";
-  const rawBase = match ? "https://raw.githubusercontent.com/" + match[1] + "/" + match[2] + "/" + branch + "/" + directory : "";
-  const blobBase = match ? "https://github.com/" + match[1] + "/" + match[2] + "/blob/" + branch + "/" + directory : "";
-
-  document.querySelectorAll("img[src]").forEach((image) => {
-    const source = image.getAttribute("src")?.trim() || "";
-    if (source && !/^(?:data:|blob:|https?:|\/\/)/i.test(source) && rawBase) {
-      try { image.setAttribute("src", new URL(source, rawBase).href); } catch { image.removeAttribute("src"); }
-    }
-    image.setAttribute("loading", "lazy");
-    image.setAttribute("referrerpolicy", "no-referrer");
-  });
-  document.querySelectorAll("a[href]").forEach((link) => {
-    const href = link.getAttribute("href")?.trim() || "";
-    if (href && !/^(?:https?:|mailto:|#|\/\/)/i.test(href) && blobBase) {
-      try { link.setAttribute("href", new URL(href, blobBase).href); } catch { link.removeAttribute("href"); }
-    }
-    link.setAttribute("target", "_blank");
-    link.setAttribute("rel", "noreferrer noopener");
-  });
-  return DOMPurify.sanitize(document.body.innerHTML, { ADD_ATTR: ["target", "rel", "loading", "referrerpolicy"] });
-}
-
-export function MarketPage() {
-  const dialog = useAppDialog();
-  const toast = useToast();
-  const [items, setItems] = useState<ApiData[]>([]);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [marketKind, setMarketKind] = useState<"complete" | "single" | "module">("complete");
-  const [mirror, setMirror] = useState("");
-  const [mirrors, setMirrors] = useState<string[]>([]);
-  const [preview, setPreview] = useState<ApiData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = async (refresh = false) => {
-    setLoading(true);
-    try {
-      if (refresh) await api("/api/market/refresh", { method: "POST" });
-      const [list, mirrorData] = await Promise.all([api<ApiData>("/api/market/list"), api<ApiData>("/api/market/mirror")]);
-      setItems(Array.isArray(list.data) ? list.data : []);
-      setMirror(String(mirrorData.mirror || ""));
-      setMirrors(Array.isArray(mirrorData.mirrors) ? mirrorData.mirrors : []);
-    } catch (error) { toast(errorMessage(error, "市场读取失败"), { variant: "error" }); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
-
-  const saveMirror = async (value: string) => {
-    setMirror(value);
-    try { await api("/api/market/mirror", { method: "POST", body: JSON.stringify({ mirror: value }) }); }
-    catch (error) { toast(errorMessage(error, "镜像保存失败"), { variant: "error" }); }
-  };
-  const changeInstall = async (item: ApiData) => {
-    const removing = Boolean(item.installed && !item.has_update);
-    if (removing && !await dialog.confirm({ title: "卸载插件", description: "卸载 " + item.name + "？插件代码会被移除，配置与数据将保留。", confirmLabel: "卸载", destructive: true })) return;
-    try {
-      await api(removing ? "/api/market/uninstall" : "/api/market/install", { method: "POST", body: JSON.stringify(removing ? { name: item.name, type: marketType(item), keep_data: true } : { ...item, type: marketType(item), mirror }) });
-      toast(removing ? "卸载成功" : item.has_update ? "更新成功" : "安装成功"); await load();
-    } catch (error) { toast(errorMessage(error, removing ? "卸载失败" : "安装失败"), { variant: "error" }); }
-  };
-  const showPreview = async (item: ApiData) => {
-    if (!item.github) return;
-    try {
-      const result = await api<ApiData>("/api/market/preview", {
-        method: "POST",
-        body: JSON.stringify({
-          github: item.github,
-          branch: item.branch || "main",
-          path: item.path || "",
-          mirror,
-        }),
-      });
-      const files = Array.isArray(result.files) ? result.files : [];
-      setPreview({
-        item,
-        ...result,
-        selected: String(files[0]?.path || files[0]?.name || ""),
-      });
-    }
-    catch (error) { toast(errorMessage(error, "预览失败"), { variant: "error" }); }
-  };
-
-  const categories = [...new Set(items.filter((item) => marketType(item) === marketKind).map((item) => String(item.category || "")).filter(Boolean))];
-  const query = search.trim().toLowerCase();
-  const filtered = items.filter((item) => marketType(item) === marketKind).filter((item) => !category || String(item.category || "") === category).filter((item) => {
-    if (!query) return true;
-    return [item.name, item.description, item.author, ...(Array.isArray(item.tags) ? item.tags : [])].some((value) => String(value || "").toLowerCase().includes(query));
-  });
-
-  return <section className="space-y-4 sm:space-y-6">
-    <FeatureHeading icon={PackageOpen} title="插件市场" detail="浏览社区插件、模块和扩展，安装前可查阅使用文档" />
-    <Card><CardContent className="p-3 sm:p-4">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className="flex min-w-0 flex-1 rounded-md border bg-muted/30 p-0.5 sm:flex-none">{([["complete", "完整插件"], ["single", "独立插件"], ["module", "模块"]] as const).map(([value, label]) => <Button key={value} size="sm" className="min-w-0 flex-1 sm:flex-none" variant={marketKind === value ? "default" : "ghost"} onClick={() => { setMarketKind(value); setCategory(""); }}>{value === "module" ? <Boxes className="size-3.5" /> : <PackageOpen className="size-3.5" />}{label}</Button>)}</div>
-        <Input className="min-w-[140px] flex-1 sm:max-w-xs" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索名称、作者或标签" />
-        <Button className="w-auto" onClick={() => load()}><Search className="size-3.5" />搜索</Button>
-        <SelectBox value={category} onChange={setCategory} className="w-auto min-w-[130px]"><option value="">全部分类</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</SelectBox>
-        <SelectBox value={mirror} onChange={saveMirror} className="w-auto min-w-[170px]"><option value="">自动选择镜像</option>{mirrors.map((value) => <option key={value} value={value}>{value || "GitHub 直连"}</option>)}</SelectBox>
-        <span className="whitespace-nowrap text-xs text-muted-foreground">当前显示 {filtered.length} 个</span>
-        <Button className="w-auto sm:ml-auto" variant="outline" onClick={() => load(true)}><RefreshCw className="size-3.5" />刷新仓库</Button>
-      </div>
-    </CardContent></Card>
-    <Notice text="第三方插件由社区开发者提供，请在安装前确认来源和权限，框架不对第三方插件内容负责。" />
-    {loading ? <Busy /> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{filtered.length ? filtered.map((item, index) => {
-      const kind = marketType(item);
-      const tags = (Array.isArray(item.tags) ? item.tags : []).map(String).filter((tag) => tag && tag.toLowerCase() !== String(item.category || "").toLowerCase());
-      return <Card key={String(item.name || index)} className="flex h-full min-h-[220px] min-w-0 flex-col overflow-hidden">
-        <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2"><div className="flex min-w-0 items-start gap-2.5">
-          <LazyAvatar src={marketAvatarUrl(item)} label={String(item.name || "插件")} className="size-9 rounded-lg" />
-          <div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><CardTitle className="min-w-0 break-words text-base">{item.name || "未命名插件"}</CardTitle>{marketOfficial(item) && <Badge variant="secondary">官方</Badge>}</div><CardDescription className="mt-1 break-words">{item.author || "未知作者"}</CardDescription></div>
-          <div className="flex shrink-0 flex-col items-end gap-1"><Badge variant={item.has_update ? "warning" : item.installed ? "success" : "secondary"}>{item.has_update ? "可更新" : item.installed ? "已安装" : kind === "module" ? "模块" : kind === "single" ? "独立" : "完整"}</Badge>{item.version && <span className="text-[11px] text-muted-foreground">v{item.version}</span>}</div>
-        </div></CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-2 p-3 pt-0 sm:p-4 sm:pt-0"><p className="min-h-8 break-words text-xs leading-5 text-muted-foreground">{item.description || "暂无描述"}</p>
-          {(item.category || tags.length) && <div className="flex flex-wrap gap-1.5">{item.category && <Badge variant="outline">{item.category}</Badge>}{tags.slice(0, 5).map((tag) => <Badge key={tag} variant="secondary" className="font-normal">{tag}</Badge>)}</div>}
-          <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-2"><div className="flex min-w-0 items-center gap-2">{item.github && <a className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary" href={String(item.github)} target="_blank" rel="noreferrer"><ExternalLink className="size-3.5" />仓库</a>}<span className="text-[11px] text-muted-foreground">{item.alone === false ? "独立目录" : kind === "module" ? "模块扩展" : "插件目录"}</span></div><div className="flex shrink-0 gap-1.5"><Button size="sm" variant="outline" onClick={() => showPreview(item)} disabled={!item.github}><FileText className="size-3.5" />文档</Button><Button size="sm" variant={item.installed && !item.has_update ? "outline" : "default"} className={item.installed && !item.has_update ? "text-destructive" : ""} onClick={() => changeInstall(item)}>{item.has_update ? <><RefreshCw className="size-3.5" />更新</> : item.installed ? <><Trash2 className="size-3.5" />卸载</> : <><Download className="size-3.5" />安装</>}</Button></div></div>
-        </CardContent>
-      </Card>;
-    }) : <Card className="sm:col-span-2 xl:col-span-3"><CardContent className="p-10 text-center"><Notice text={query || category ? "没有匹配的插件" : "市场暂无可用插件或网络不可达"} /></CardContent></Card>}</div>}
-    <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
-      <DialogContent className="max-w-[920px] sm:w-[min(94vw,920px)]">
-        {preview && (() => {
-          const selectedFile = marketPreviewFile(preview);
-          const html = marketMarkdownHtml(preview);
-          return <>
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 pr-2">
-              <div className="min-w-0"><DialogTitle className="break-words">{preview.item?.name} 文档</DialogTitle><DialogDescription>插件仓库中的 README 和 Markdown 使用文档</DialogDescription></div>
-              {Array.isArray(preview.files) && preview.files.length > 0 && <div className="flex min-w-0 flex-wrap items-center gap-2"><SelectBox value={String(preview.selected || "")} onChange={(value) => setPreview((current) => current ? { ...current, selected: value } : current)} className="max-w-[240px] min-w-[150px]">{preview.files.map((file: ApiData) => <option key={String(file.path || file.name)} value={String(file.path || file.name)}>{String(file.name || file.path)}</option>)}</SelectBox><span className="whitespace-nowrap text-xs text-muted-foreground">{Number(selectedFile?.size || 0).toLocaleString()} 字节</span></div>}
-            </div>
-            {html ? <article className="market-markdown max-h-[70dvh] min-w-0 overflow-auto rounded-md border bg-background p-4 sm:p-6" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="grid min-h-[240px] place-items-center rounded-md border border-dashed bg-muted/30 p-6"><Notice text="当前插件目录没有 Markdown 文档" /></div>}
-          </>;
         })()}
       </DialogContent>
     </Dialog>

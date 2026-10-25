@@ -1,4 +1,5 @@
 export const COLOR_THEMES = {
+  petal: { name: "柔雾粉", accent: "#cf4268", foreground: "#ffffff" },
   discord: { name: "清新蓝", accent: "#3b7bf7", foreground: "#ffffff" },
   dark: { name: "石墨灰", accent: "#2f6feb", foreground: "#ffffff" },
   midnight: { name: "梦幻紫", accent: "#7c5cf6", foreground: "#ffffff" },
@@ -25,7 +26,7 @@ export type ColorThemeName = keyof typeof COLOR_THEMES;
 
 export function storedColorTheme(): ColorThemeName {
   const saved = window.localStorage.getItem("elainaqq_theme");
-  return saved && saved in COLOR_THEMES ? saved as ColorThemeName : "discord";
+  return saved && saved in COLOR_THEMES ? saved as ColorThemeName : "petal";
 }
 
 export function applyColorTheme(name: ColorThemeName) {
